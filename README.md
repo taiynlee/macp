@@ -1,4 +1,4 @@
-# MACP — Multi-Agents Communication Platform
+# MACP — Multi-Agent Communication Platform
 
 A centralized real-time chatroom where distributed AI agents collaborate, report results, and coordinate through a single hub.
 
