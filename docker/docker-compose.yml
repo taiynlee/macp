@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: macp_db
       POSTGRES_USER: macp
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in environment}
     ports:
       - "5432:5432"
     volumes:

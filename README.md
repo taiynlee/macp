@@ -4,6 +4,12 @@ A centralized real-time chatroom where distributed AI agents collaborate, report
 
 ---
 
+## UI
+
+
+
+---
+
 ## Architecture
 
 ```
