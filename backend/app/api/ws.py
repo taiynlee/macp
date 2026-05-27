@@ -148,6 +148,11 @@ async def agent_ws(ws: WebSocket, name: str) -> None:
 
             if msg_type == "system" and action == "job_result":
                 registry.report_job(name, msg.get("job", ""), msg.get("success", False))
+                await manager.broadcast(json.dumps({
+                    "type": "system",
+                    "action": "schedule_updated",
+                    "name": name,
+                }))
                 continue
 
             _store_context(name, msg)

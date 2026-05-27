@@ -85,7 +85,7 @@ export function useWebSocket(): UseWebSocketReturn {
         const msg: MACPMessage = JSON.parse(ev.data)
         const action = msg.action
 
-        if (msg.type === 'system' && (action === 'agent_connected' || action === 'agent_disconnected')) {
+        if (msg.type === 'system' && (action === 'agent_connected' || action === 'agent_disconnected' || action === 'schedule_updated')) {
           refreshAgents()
         }
 

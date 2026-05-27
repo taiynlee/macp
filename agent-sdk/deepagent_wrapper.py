@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 
 import httpx
 
@@ -20,8 +21,8 @@ from wrapper import AgentWrapper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [dba_agent] %(message)s")
 
-DEEPAGENT_URL = "http://localhost:2024"
-ASSISTANT_ID  = ""   # set via env: DEEPAGENT_ASSISTANT_ID, or pass --assistant
+DEEPAGENT_URL = os.environ.get("DEEPAGENT_URL", "http://localhost:2024")
+ASSISTANT_ID  = os.environ.get("DEEPAGENT_ASSISTANT_ID", "")
 
 _APPROVE_WORDS = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
 _REJECT_WORDS  = {"reject", "no", "n", "拒絕", "取消", "cancel"}
