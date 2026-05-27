@@ -97,10 +97,11 @@ class DeepAgentWrapper(AgentWrapper):
                 json={
                     "assistant_id": ASSISTANT_ID,
                     "input": {"messages": [{"role": "user", "content": question}]},
-                    "resumable": True,
                 },
             )
-            r.raise_for_status()
+            if r.status_code != 200:
+                logging.warning(f"[dba_agent] runs/wait {r.status_code}: {r.text[:300]}")
+                r.raise_for_status()
             data = r.json()
 
             for _ in range(8):
@@ -138,7 +139,6 @@ class DeepAgentWrapper(AgentWrapper):
                     json={
                         "assistant_id": ASSISTANT_ID,
                         "command": {"resume": resume_value},
-                        "resumable": True,
                     },
                 )
                 logging.info(f"[dba_agent] resume {r.status_code}: {r.text[:500]}")
