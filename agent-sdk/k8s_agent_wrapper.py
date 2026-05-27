@@ -90,10 +90,11 @@ class K8sAgentWrapper(AgentWrapper):
                 json={
                     "assistant_id": self._assistant_id,
                     "input": {"messages": [{"role": "user", "content": question}]},
-                    "resumable": True,
                 },
             )
-            r.raise_for_status()
+            if r.status_code != 200:
+                logging.warning(f"runs/wait {r.status_code}: {r.text[:300]}")
+                r.raise_for_status()
             data = r.json()
 
             for _ in range(8):
@@ -124,7 +125,6 @@ class K8sAgentWrapper(AgentWrapper):
                     json={
                         "assistant_id": self._assistant_id,
                         "command": {"resume": resume_value},
-                        "resumable": True,
                     },
                 )
                 logging.info(f"resume {r.status_code}: {r.text[:300]}")
