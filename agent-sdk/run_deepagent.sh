@@ -21,7 +21,8 @@ export NO_PROXY="$no_proxy"
 # auto-discover assistant ID if not set
 if [ -z "$DEEPAGENT_ASSISTANT_ID" ]; then
   echo "[dba_agent] fetching assistant ID from ${LANGGRAPH_URL}..."
-  DEEPAGENT_ASSISTANT_ID=$(curl -sf "${LANGGRAPH_URL}/assistants" | python3 -c "
+  DEEPAGENT_ASSISTANT_ID=$(curl -sf -X POST "${LANGGRAPH_URL}/assistants/search" \
+    -H "Content-Type: application/json" -d '{"limit":1}' | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 if data: print(data[0]['assistant_id'])
@@ -29,7 +30,7 @@ if data: print(data[0]['assistant_id'])
   if [ -z "$DEEPAGENT_ASSISTANT_ID" ]; then
     echo "[dba_agent] ERROR: could not auto-discover assistant ID."
     echo "  Is LangGraph running at ${LANGGRAPH_URL}?"
-    echo "  Try: curl ${LANGGRAPH_URL}/assistants"
+    echo "  Try: curl -X POST ${LANGGRAPH_URL}/assistants/search -H 'Content-Type: application/json' -d '{\"limit\":1}'"
     echo "  Then: DEEPAGENT_ASSISTANT_ID=<uuid> bash $0"
     exit 1
   fi
