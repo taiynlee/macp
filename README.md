@@ -157,137 +157,133 @@ bash run_k8s_agent.sh MACP_IP [ASSISTANT_ID] [LANGGRAPH_URL]
 
 ---
 
-## 斷線恢復 / Recovery Guide
+## 斷線恢復 / Recovery SOP
 
-> 筆電斷電、重啟、或斷線後，依以下順序逐一啟動各元件。
+> 筆電斷電、重啟、或斷線後，依以下順序啟動各元件。整個流程約 3–5 分鐘。
 
-### 元件清單
+### 元件總覽
 
-| 元件 | 執行位置 | 指令/說明 |
-|------|----------|-----------|
-| MACP Backend | Windows (本機) | uvicorn，port 8010 |
-| Frontend | Windows (本機) | Vite dev server，port 5173 |
-| LangGraph (dba) | WSL | 通常在重啟 WSL 後需手動啟動 |
-| dba_agent wrapper | WSL | 連到 Windows MACP |
-| LangGraph (k8s) | 遠端 Ubuntu | 需在該機器確認 |
-| k8s_agent wrapper | 遠端 Ubuntu | 連到 Windows MACP |
+| 元件 | 執行位置 | Port |
+|------|----------|------|
+| MACP Backend | Windows 本機 | 8010 |
+| MACP Frontend | Windows 本機 | 5173 |
+| LangGraph (dba) | WSL | 2024 |
+| dba_agent wrapper | WSL | — |
+| LangGraph (k8s) | 遠端 Ubuntu | 2024 |
+| LangGraph (gmail) | 遠端 Ubuntu | 49137 |
+| k8s_agent wrapper | 遠端 Ubuntu | — |
+| gmail_agent wrapper | 遠端 Ubuntu | — |
 
 ---
 
-### Step 1 — 確認 Windows IP
+### Step 0 — 確認 Windows IP
 
-WSL 和遠端 Ubuntu 都需要知道這台 Windows 的 IP。
+WSL 和遠端 Ubuntu 都需要知道這台 Windows 的 IP（每次重開機可能會換）。
 
 ```powershell
-# PowerShell
 ipconfig | findstr "IPv4"
 ```
 
-常用 IP 範例：`10.x.x.x`（公司網路）、`192.168.x.x`（家用）。
+記下公司網路那條（`10.x.x.x` 或 `192.168.x.x`），後面以 `<WINDOWS_IP>` 代稱。
 
 ---
 
-### Step 2 — 啟動 MACP Backend（Windows PowerShell）
+### Step 1 — 啟動 Windows 元件（一鍵）
+
+雙擊或在 PowerShell 執行：
 
 ```powershell
-cd d:\workplace\macp\backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
+d:\workplace\macp\start_macp.ps1
 ```
 
-> 確認：瀏覽器開 http://localhost:8010/docs 有顯示 API 文件即可。
+腳本會自動開兩個終端（Backend / Frontend）並在 7 秒後開啟瀏覽器。
+
+✅ 確認：`http://localhost:5173` 出現聊天室介面
 
 ---
 
-### Step 3 — 啟動 Frontend（Windows，另開終端機）
-
-```powershell
-cd d:\workplace\macp\frontend
-npm run dev
-```
-
-> 確認：瀏覽器開 http://localhost:5173 有顯示聊天室介面。
-
----
-
-### Step 4 — 啟動 dba_agent（WSL）
-
-先確認 LangGraph deepagent 正在執行，再啟動 wrapper：
+### Step 2 — 啟動 dba_agent（WSL）
 
 ```bash
-# 確認 LangGraph 服務
+# 1. 確認 LangGraph 服務已啟動
 curl http://localhost:2024/ok
 
-# 啟動 wrapper（直接指定 assistant ID）
-DEEPAGENT_ASSISTANT_ID=fe096781-5601-53d2-b2f6-0d3403f7e9ca \
-no_proxy="localhost,127.0.0.1,10.x.x.x" \
-NO_PROXY="localhost,127.0.0.1,10.x.x.x" \
-python3 /mnt/d/workplace/macp/agent-sdk/deepagent_wrapper.py \
-  --server ws://10.x.x.x:8010/ws/agent
+# 2. 自動抓 assistant ID 並啟動
+bash /mnt/d/workplace/macp/agent-sdk/run_deepagent.sh
 ```
 
-如果 LangGraph 沒在跑，需先在 WSL 或背景啟動你的 LangGraph server，再執行上面的指令。
+> `run_deepagent.sh` 會自動偵測 Windows IP、proxy bypass、assistant ID。
 
-> 確認：MACP 聊天室右側「Agent 面板」出現 dba_agent，公告欄顯示 4 個排程。
+✅ 確認：MACP 右側面板出現 **dba_agent**，公告欄顯示 4 個排程
 
 ---
 
-### Step 5 — 啟動 k8s_agent（遠端 Ubuntu）
+### Step 3 — 啟動 k8s_agent（遠端 Ubuntu）
 
-**先在 WSL 建立 SSH tunnel（讓 Ubuntu 可用 LangGraph）：**
-```bash
-# WSL terminal（保持開著）
-ssh root@10.x.x.x -R 2024:localhost:2024 -N
-```
-
-**再在 Ubuntu 上啟動：**
-```bash
-bash ~/macp/agent-sdk/run_k8s_agent.sh 10.x.x.x fe096781-5601-53d2-b2f6-0d3403f7e9ca http://localhost:2024
-```
-
-若需自動抓 assistant ID：
+SSH 進遠端 Ubuntu，執行：
 
 ```bash
-bash ~/macp/agent-sdk/run_k8s_agent.sh <WINDOWS_IP> <ASSISTANT_ID>
+bash ~/macp/agent-sdk/run_k8s_agent.sh <WINDOWS_IP>
 ```
 
-> 確認：MACP 聊天室右側「Agent 面板」出現 k8s_agent，公告欄顯示排程。
+✅ 確認：MACP 右側面板出現 **k8s_agent**
+
+---
+
+### Step 4 — 啟動 gmail_agent（遠端 Ubuntu）
+
+在同一台遠端 Ubuntu，另開 terminal：
+
+```bash
+bash ~/macp/agent-sdk/run_gmail_agent.sh <WINDOWS_IP>
+```
+
+> `run_gmail_agent.sh` 會自動偵測 LangGraph port（預設 49137）與 assistant ID。
+
+✅ 確認：MACP 右側面板出現 **gmail_agent**
 
 ---
 
 ### 快速確認清單
 
 ```
-[ ] http://localhost:8010/docs  → Backend 正常
-[ ] http://localhost:5173       → Frontend 正常
-[ ] WSL: curl http://localhost:2024/ok  → LangGraph (dba) 正常
-[ ] MACP 右側面板: dba_agent   → dba wrapper 連線
-[ ] MACP 右側面板: k8s_agent   → k8s wrapper 連線
+[ ] http://localhost:8010/docs  → Backend API 文件正常
+[ ] http://localhost:5173       → 聊天室介面正常
+[ ] WSL: curl http://localhost:2024/ok → LangGraph (dba) 正常
+[ ] 聊天室發 "hi" → 所有 agent 回應
+[ ] 右側面板: dba_agent  ✓
+[ ] 右側面板: k8s_agent  ✓
+[ ] 右側面板: gmail_agent ✓
 ```
 
 ---
 
 ### 常見問題
 
-**dba_agent 連線失敗 (connection refused)**
+**agent wrapper 連線失敗（connection refused）**
 - 確認 Backend 在 port 8010 執行中
-- 確認 Windows 防火牆允許 WSL 連到 8010（通常自動允許）
-- 確認 IP 正確：`ip route | grep default | awk '{print $3}'`（WSL 中執行）
+- 確認 Windows IP 正確：`ip route | grep default | awk '{print $3}'`（WSL）
+- 確認 Windows 防火牆允許入站 8010
 
-**dba_agent 無法呼叫 LangGraph (proxy 擋住)**
-- `run_deepagent.sh` 已自動設定 `no_proxy`，但若仍失敗：
+**dba_agent 無法呼叫 LangGraph（proxy 擋住）**
+- `run_deepagent.sh` 已自動設定 `no_proxy`；若仍失敗，手動執行：
   ```bash
-  export no_proxy="localhost,127.0.0.1,$(ip route | grep default | awk '{print $3}')"
-  export NO_PROXY="$no_proxy"
-  bash /mnt/d/workplace/macp/agent-sdk/run_deepagent.sh
+  WINDOWS_IP=$(ip route | grep default | awk '{print $3}')
+  no_proxy="localhost,127.0.0.1,$WINDOWS_IP" \
+  NO_PROXY="localhost,127.0.0.1,$WINDOWS_IP" \
+  python3 /mnt/d/workplace/macp/agent-sdk/deepagent_wrapper.py \
+    --server ws://$WINDOWS_IP:8010/ws/agent
   ```
 
-**找不到 assistant ID**
-- 手動查詢：`curl http://localhost:2024/assistants | python3 -m json.tool`
-- 取第一筆的 `assistant_id` 欄位值
+**找不到 LangGraph assistant ID**
+- 手動查詢：`curl -s -X POST http://localhost:2024/assistants/search -H 'Content-Type: application/json' -d '{}' | python3 -m json.tool`
 
-**聊天室沒有 agent 回應**
-- 傳送 `@dba_agent 你好` 確認 routing 是否正常
-- 查看 Backend 終端機的 log 確認 orchestrator 有收到訊息
+**聊天室發訊息沒有 agent 回應**
+- 確認訊息含 keyword（如 `db`、`k8s`、`email`）或明確 `@agent名稱`
+- 查看 Backend log：orchestrator 是否有收到並 route
+
+**agent 重複回覆**
+- server 有 15 秒去重機制；若仍重複，發 `@agent_name !reset` 清除記憶
 
 ---
 
