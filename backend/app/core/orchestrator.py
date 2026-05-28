@@ -27,6 +27,7 @@ KEYWORD_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(k8s|kubernetes|pod|deploy|namespace|helm|kubectl|cluster|node|ingress)\b|容器|叢集|部署|服務", re.I), "k8s_agent"),
     (re.compile(r"\b(network|ping|traceroute|bandwidth|dns|latency|port|firewall)\b|網路|防火牆|頻寬|延遲", re.I), "network_agent"),
     (re.compile(r"\b(code|review|commit|pull.?request|pr|git|branch|diff|merge)\b|程式|代碼|提交", re.I), "claude_dev_agent"),
+    (re.compile(r"\b(email|gmail|mail|inbox|send.?mail|reply|draft|attachment)\b|郵件|信箱|收件|寄信|回信|草稿|附件", re.I), "gmail_agent"),
 ]
 
 _ROUTE_SYSTEM = """You are a task router for a multi-agent platform.
