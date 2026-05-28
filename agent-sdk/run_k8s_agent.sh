@@ -1,27 +1,50 @@
 #!/usr/bin/env bash
-# Run k8s_agent MACP bridge on Ubuntu (no LangGraph required).
-# Uses kubernetes Python client + Claude API directly.
+# Run k8s_agent MACP bridge on Ubuntu.
+# Requires LangGraph accessible at LANGGRAPH_URL (default localhost:2024).
+# If LangGraph is on Windows/WSL, set up SSH tunnel first:
+#   ssh root@<this-machine-ip> -R 2024:localhost:2024 -N
 #
-# Usage: bash run_k8s_agent.sh WINDOWS_IP
-# Env:   ANTHROPIC_API_KEY=sk-ant-...  (optional, enables AI reasoning)
+# Usage: bash run_k8s_agent.sh WINDOWS_IP [ASSISTANT_ID] [LANGGRAPH_URL]
 #
 # Examples:
 #   bash run_k8s_agent.sh 10.x.x.x
-#   ANTHROPIC_API_KEY=sk-ant-... bash run_k8s_agent.sh 10.x.x.x
+#   bash run_k8s_agent.sh 10.x.x.x abc123-def456
+#   bash run_k8s_agent.sh 10.x.x.x abc123-def456 http://localhost:2024
 set -e
 
-WINDOWS_IP="${1:?Usage: $0 WINDOWS_IP}"
+WINDOWS_IP="${1:?Usage: $0 WINDOWS_IP [ASSISTANT_ID] [LANGGRAPH_URL]}"
+ASSISTANT_ID="${2:-}"
+LANGGRAPH_URL="${3:-http://localhost:2024}"
 MACP_SERVER="ws://${WINDOWS_IP}:8010/ws/agent"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export no_proxy="localhost,127.0.0.1,${WINDOWS_IP}"
 export NO_PROXY="$no_proxy"
 
+# auto-discover assistant ID if not provided
+if [ -z "$ASSISTANT_ID" ]; then
+  echo "[k8s_agent] fetching assistant ID from ${LANGGRAPH_URL}..."
+  ASSISTANT_ID=$(curl -sf -X POST "${LANGGRAPH_URL}/assistants/search" \
+    -H "Content-Type: application/json" -d '{"limit":1}' | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+if data: print(data[0]['assistant_id'])
+" 2>/dev/null || true)
+  if [ -z "$ASSISTANT_ID" ]; then
+    echo "[k8s_agent] ERROR: could not auto-discover assistant ID."
+    echo "  Is LangGraph running at ${LANGGRAPH_URL}?"
+    echo "  SSH tunnel needed: ssh root@<this-ip> -R 2024:localhost:2024 -N"
+    exit 1
+  fi
+  echo "[k8s_agent] found assistant: ${ASSISTANT_ID}"
+fi
+
 echo "[k8s_agent] connecting to MACP at ${MACP_SERVER}"
 
 exec uv run \
+  --with httpx \
   --with websockets \
-  --with kubernetes \
-  --with anthropic \
   python "$SCRIPT_DIR/k8s_agent_wrapper.py" \
-  --server "$MACP_SERVER"
+  --server    "$MACP_SERVER" \
+  --langgraph "$LANGGRAPH_URL" \
+  --assistant "$ASSISTANT_ID"
