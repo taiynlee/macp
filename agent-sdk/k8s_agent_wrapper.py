@@ -234,6 +234,10 @@ class K8sAgentWrapper(AgentWrapper):
 
     def _keyword_fallback(self, question: str) -> str:
         q = question.lower()
+        k8s_keywords = {"pod", "node", "namespace", "kubectl", "deploy", "service",
+                        "log", "cluster", "k8s", "kubernetes", "pv", "pvc", "ingress"}
+        if not any(kw in q for kw in k8s_keywords):
+            return "嗨！我是 k8s_agent，負責 Kubernetes 叢集管理。你可以問我 pod 狀態、node 資訊、namespace 列表等。"
         try:
             if "pod" in q:
                 return _list_pods("all")
@@ -241,6 +245,8 @@ class K8sAgentWrapper(AgentWrapper):
                 return _list_nodes()
             if "namespace" in q or " ns " in q:
                 return _list_namespaces()
+            if "log" in q:
+                return "請指定 pod 名稱，例如：「查看 pod my-pod 的 log」"
             return _list_nodes() + "\n\n" + _list_pods("all")
         except Exception as e:
             return f"k8s error: {e}"
