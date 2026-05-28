@@ -1,197 +1,287 @@
 """
-k8s_agent → MACP bridge.
+k8s_agent → MACP bridge (no LangGraph).
 
-Runs on Ubuntu. Connects to local LangGraph k8s_agent and remote MACP server.
+Uses kubernetes Python client directly + Claude for reasoning.
+Requires: pip install kubernetes anthropic websockets
 
 Usage:
     python k8s_agent_wrapper.py --server ws://WINDOWS_IP:8010/ws/agent
-    python k8s_agent_wrapper.py --server ws://WINDOWS_IP:8010/ws/agent --assistant YOUR_ID
-    python k8s_agent_wrapper.py --server ws://WINDOWS_IP:8010/ws/agent --langgraph http://localhost:2024
 """
 
 import argparse
-import asyncio
-import json
 import logging
+import os
+import subprocess
 
-import httpx
+import anthropic
+from kubernetes import client, config
 
 from wrapper import AgentWrapper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [k8s_agent] %(message)s")
 
-# ── defaults (override via CLI args) ─────────────────────────────────────────
-DEFAULT_LANGGRAPH  = "http://localhost:2024"
-DEFAULT_ASSISTANT  = ""   # fill in or pass --assistant
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+try:
+    config.load_kube_config()
+    _K8S_READY = True
+except Exception as e:
+    logging.warning(f"k8s config not loaded: {e}")
+    _K8S_READY = False
 
 
-_APPROVE_WORDS = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
-_REJECT_WORDS  = {"reject", "no", "n", "拒絕", "取消", "cancel"}
+# ── k8s tool implementations ──────────────────────────────────────────────────
+
+def _list_pods(namespace: str = "default") -> str:
+    v1 = client.CoreV1Api()
+    if namespace == "all":
+        pods = v1.list_pod_for_all_namespaces()
+        lines = [f"找到 {len(pods.items)} 個 Pods (all namespaces)\n"]
+        for pod in pods.items:
+            s = "✅" if pod.status.phase == "Running" else "⚠️"
+            lines.append(f"{s} {pod.metadata.namespace}/{pod.metadata.name} | {pod.status.phase}")
+    else:
+        pods = v1.list_namespaced_pod(namespace=namespace)
+        lines = [f"找到 {len(pods.items)} 個 Pods (namespace: {namespace})\n"]
+        for pod in pods.items:
+            s = "✅" if pod.status.phase == "Running" else "⚠️"
+            lines.append(f"{s} {pod.metadata.name} | {pod.status.phase}")
+    return "\n".join(lines)
 
 
-def _parse_decision(text: str) -> str | None:
-    low = text.strip().lower()
-    if low in _APPROVE_WORDS: return "approve"
-    if low in _REJECT_WORDS:  return "reject"
-    return None
+def _list_nodes() -> str:
+    v1 = client.CoreV1Api()
+    nodes = v1.list_node()
+    lines = [f"找到 {len(nodes.items)} 個 Nodes\n"]
+    for node in nodes.items:
+        ready = next((c.status for c in node.status.conditions if c.type == "Ready"), "Unknown")
+        s = "✅" if ready == "True" else "❌"
+        lines.append(f"{s} {node.metadata.name} | Ready={ready}")
+    return "\n".join(lines)
 
 
-def _extract_text(messages: list) -> str:
-    for msg in reversed(messages):
-        if msg.get("type") in ("human", "tool"):
-            continue
-        content = str(msg.get("content", "")).strip()
-        if not content:
-            continue
-        if "</think>" in content:
-            content = content.split("</think>", 1)[-1].strip()
-        if content:
-            return content
-    return ""
+def _describe_node(node_name: str) -> str:
+    v1 = client.CoreV1Api()
+    node = v1.read_node(name=node_name)
+    lines = [f"Node: {node_name}", "=" * 50]
+    lines.append("Conditions:")
+    for c in node.status.conditions:
+        s = "✅" if c.status == "True" else "❌"
+        lines.append(f"  {s} {c.type}: {c.reason}")
+    lines.append("\nAllocatable:")
+    for k, v in node.status.allocatable.items():
+        lines.append(f"  {k}: {v}")
+    lines.append(f"\nOS: {node.status.node_info.operating_system}")
+    lines.append(f"Kubelet: {node.status.node_info.kubelet_version}")
+    return "\n".join(lines)
 
+
+def _list_namespaces() -> str:
+    v1 = client.CoreV1Api()
+    ns_list = v1.list_namespace()
+    lines = [f"找到 {len(ns_list.items)} 個 Namespaces\n"]
+    for ns in ns_list.items:
+        lines.append(f"• {ns.metadata.name} | {ns.status.phase}")
+    return "\n".join(lines)
+
+
+def _get_pod_logs(pod_name: str, namespace: str = "default", tail_lines: int = 50) -> str:
+    v1 = client.CoreV1Api()
+    logs = v1.read_namespaced_pod_log(name=pod_name, namespace=namespace, tail_lines=tail_lines)
+    return f"[{namespace}/{pod_name} logs]\n{logs}"
+
+
+def _kubectl(command: str) -> str:
+    parts = command.strip().split()
+    if parts and parts[0] == "kubectl":
+        parts = parts[1:]
+    result = subprocess.run(["kubectl"] + parts, capture_output=True, text=True, timeout=30)
+    return (result.stdout or result.stderr)[:3000]
+
+
+def _call_tool(name: str, inputs: dict) -> str:
+    try:
+        if name == "list_pods":
+            return _list_pods(inputs.get("namespace", "default"))
+        if name == "list_nodes":
+            return _list_nodes()
+        if name == "describe_node":
+            return _describe_node(inputs["node_name"])
+        if name == "list_namespaces":
+            return _list_namespaces()
+        if name == "get_pod_logs":
+            return _get_pod_logs(inputs["pod_name"], inputs.get("namespace", "default"), inputs.get("tail_lines", 50))
+        if name == "kubectl":
+            return _kubectl(inputs["command"])
+        return f"unknown tool: {name}"
+    except Exception as e:
+        return f"tool error ({name}): {e}"
+
+
+_TOOLS = [
+    {
+        "name": "list_pods",
+        "description": "List pods. Use namespace='all' for all namespaces.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "namespace": {"type": "string", "description": "namespace name or 'all'"}
+            },
+        },
+    },
+    {
+        "name": "list_nodes",
+        "description": "List all nodes in the cluster with Ready status.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "describe_node",
+        "description": "Describe a specific node (conditions, resources, OS info).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"node_name": {"type": "string"}},
+            "required": ["node_name"],
+        },
+    },
+    {
+        "name": "list_namespaces",
+        "description": "List all Kubernetes namespaces.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_pod_logs",
+        "description": "Get recent logs from a pod.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pod_name": {"type": "string"},
+                "namespace": {"type": "string"},
+                "tail_lines": {"type": "integer"},
+            },
+            "required": ["pod_name"],
+        },
+    },
+    {
+        "name": "kubectl",
+        "description": "Run any kubectl command, e.g. 'get pods -A' or 'describe pod my-pod'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "kubectl args without the 'kubectl' prefix"}
+            },
+            "required": ["command"],
+        },
+    },
+]
+
+
+# ── agent ─────────────────────────────────────────────────────────────────────
 
 class K8sAgentWrapper(AgentWrapper):
     name = "k8s_agent"
     capabilities = [
-        "list_pods",
-        "get_logs",
-        "describe_node",
-        "scale_deployment",
-        "get_events",
-        "exec_kubectl",
+        "list_pods", "get_logs", "describe_node",
+        "list_namespaces", "scale_deployment", "exec_kubectl",
     ]
 
-    def __init__(self, server_url: str, langgraph_url: str, assistant_id: str) -> None:
+    def __init__(self, server_url: str) -> None:
         super().__init__(server_url=server_url)
-        self._lg_url       = langgraph_url
-        self._assistant_id = assistant_id
-        self._approval_future: asyncio.Future | None = None
-        self._approval_recently_resolved: bool = False
-        self._thread_id: str | None = None
+        if ANTHROPIC_API_KEY:
+            self._claude = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        else:
+            self._claude = None
+            logging.warning("ANTHROPIC_API_KEY not set — using keyword fallback")
 
-    async def _resolve_approval(self, decision: str) -> bool:
-        if self._approval_future and not self._approval_future.done():
-            self._approval_future.set_result(decision)
-            self._approval_recently_resolved = True
-            return True
-        return False
+    async def _ask(self, question: str) -> str:
+        if not self._claude:
+            return self._keyword_fallback(question)
 
-    async def _ask(self, question: str, timeout: int = 180) -> str:
-        async with httpx.AsyncClient(base_url=self._lg_url, timeout=timeout) as client:
-            # reuse persistent thread
-            if self._thread_id is None:
-                r = await client.post("/threads", json={})
-                r.raise_for_status()
-                self._thread_id = r.json()["thread_id"]
-                logging.info(f"created thread {self._thread_id}")
+        messages = [{"role": "user", "content": question}]
+        system = (
+            "你是 k8s_agent，Kubernetes 叢集管理專家。"
+            "用繁體中文回答。需要查詢叢集狀態時，使用提供的工具。"
+        )
 
-            r = await client.post(
-                f"/threads/{self._thread_id}/runs/wait",
-                json={
-                    "assistant_id": self._assistant_id,
-                    "input": {"messages": [{"role": "user", "content": question}]},
-                },
+        for _ in range(8):
+            resp = await self._claude.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1024,
+                system=system,
+                tools=_TOOLS,
+                messages=messages,
             )
-            if r.status_code != 200:
-                logging.warning(f"runs/wait {r.status_code}: {r.text[:300]}")
-                r.raise_for_status()
-            data = r.json()
 
-            for _ in range(8):
-                interrupts = data.get("__interrupt__", [])
-                if not interrupts:
-                    break
+            if resp.stop_reason == "end_turn":
+                return next((b.text for b in resp.content if hasattr(b, "text")), "(no response)")
 
-                iv = interrupts[0].get("value", {})
-                if isinstance(iv, dict) and "action_requests" in iv:
-                    cmd = json.dumps(iv["action_requests"], ensure_ascii=False)
-                elif isinstance(iv, dict):
-                    cmd = json.dumps(iv, ensure_ascii=False)
-                else:
-                    cmd = str(iv)
+            if resp.stop_reason == "tool_use":
+                messages.append({"role": "assistant", "content": resp.content})
+                tool_results = []
+                for block in resp.content:
+                    if block.type == "tool_use":
+                        result = _call_tool(block.name, block.input)
+                        logging.info(f"tool {block.name}: {result[:80]}")
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        })
+                messages.append({"role": "user", "content": tool_results})
+            else:
+                break
 
-                decision = "approve"
-                logging.info(f"auto-approve: {cmd[:80]}")
+        return "(k8s_agent 無法完成請求)"
 
-                if isinstance(iv, dict) and "action_requests" in iv:
-                    approved = decision == "approve"
-                    n = len(iv["action_requests"])
-                    resume_value = {"decisions": [{"type": decision}] * n}
-                else:
-                    resume_value = decision
-
-                r = await client.post(
-                    f"/threads/{self._thread_id}/runs/wait",
-                    json={
-                        "assistant_id": self._assistant_id,
-                        "command": {"resume": resume_value},
-                    },
-                )
-                logging.info(f"resume {r.status_code}: {r.text[:300]}")
-                if r.status_code != 200:
-                    break
-                data = r.json()
-                if isinstance(data, dict) and data.get("__error__"):
-                    logging.warning(f"__error__: {str(data['__error__'])[:300]}")
-                    break
-
-        messages = data.get("messages", []) if isinstance(data, dict) else []
-        return _extract_text(messages) or "(k8s_agent returned no text)"
+    def _keyword_fallback(self, question: str) -> str:
+        q = question.lower()
+        try:
+            if "pod" in q:
+                return _list_pods("all")
+            if "node" in q:
+                return _list_nodes()
+            if "namespace" in q or " ns " in q:
+                return _list_namespaces()
+            return _list_nodes() + "\n\n" + _list_pods("all")
+        except Exception as e:
+            return f"k8s error: {e}"
 
     async def handle_task(self, msg: dict) -> str:
         question = msg.get("content", "").strip()
         if not question:
             return "empty task"
         if question.lower() == "!reset":
-            self._thread_id = None
-            return "k8s_agent 記憶已清除。"
+            return "k8s_agent 已重置。"
 
         context = msg.get("context", [])
         history = "\n".join(
             f"[{m['sender']}]: {m['content']}"
-            for m in context
-            if m.get("content", "").strip()
+            for m in context if m.get("content", "").strip()
         ) if context else ""
 
         original_sender = msg.get("original_sender", "")
         reply_hint = (
-            f"此訊息來自 {original_sender}。若對話尚未結束，回覆結尾必須加上 @{original_sender} 讓對方繼續收到。\n"
+            f"此訊息來自 {original_sender}。若對話尚未結束，回覆結尾必須加上 @{original_sender}。\n"
             if original_sender and original_sender not in ("", "orchestrator", "server")
             else "若要傳訊息給 dba_agent，必須在回覆中寫 @dba_agent。\n"
         )
-        prefix = f"[系統資訊]\n你是 k8s_agent，負責 Kubernetes 叢集管理，連接至 MACP 多 Agent 平台。\n聊天室成員：operator（用戶）、dba_agent、k8s_agent（你）。\n{reply_hint}\n"
+        prefix = (
+            f"[系統資訊]\n你是 k8s_agent，負責 Kubernetes 叢集管理。\n"
+            f"聊天室成員：operator（用戶）、dba_agent、k8s_agent（你）。\n{reply_hint}\n"
+        )
         if history:
             prefix += f"[聊天室記錄]\n{history}\n\n"
-        full_question = f"{prefix}[當前問題] {question}"
 
-        logging.info(f"forwarding to k8s_agent: {question[:80]}")
-        return await self._ask(full_question)
-
-    async def _dispatch_task(self, ws, msg: dict) -> None:
-        content = msg.get("content", "").strip()
-        decision = _parse_decision(content)
-        if decision:
-            resolved = await self._resolve_approval(decision)
-            if resolved:
-                return
-            if self._approval_recently_resolved:
-                self._approval_recently_resolved = False
-                return
-        await super()._dispatch_task(ws, msg)
+        logging.info(f"processing: {question[:80]}")
+        return await self._ask(prefix + f"[當前問題] {question}")
 
     async def on_message(self, msg: dict) -> None:
-        content = str(msg.get("content", "")).strip()
-        decision = _parse_decision(content)
-        if decision and await self._resolve_approval(decision):
-            return
-        logging.info(f"recv {msg.get('type')}: {content[:80]}")
+        logging.info(f"recv {msg.get('type')}: {str(msg.get('content',''))[:80]}")
 
     async def run_scheduled_job(self, job_name: str) -> bool:
         if job_name == "pod_health_check":
             try:
-                async with httpx.AsyncClient(base_url=self._lg_url, timeout=5) as client:
-                    r = await client.get("/ok")
-                    return r.status_code < 400
+                result = _list_nodes()
+                return "❌" not in result
             except Exception:
                 return False
         return True
@@ -208,18 +298,7 @@ class K8sAgentWrapper(AgentWrapper):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--server",     required=True,          help="MACP ws:// URL")
-    parser.add_argument("--langgraph",  default=DEFAULT_LANGGRAPH, help="LangGraph server URL")
-    parser.add_argument("--assistant",  default=DEFAULT_ASSISTANT, help="LangGraph assistant ID")
+    parser.add_argument("--server", required=True, help="MACP ws:// URL")
     args = parser.parse_args()
-
-    if not args.assistant:
-        raise SystemExit("ERROR: --assistant ID required. Get it from http://localhost:2024/assistants")
-
-    logging.info(f"LangGraph: {args.langgraph}")
-    logging.info(f"MACP:      {args.server}")
-    K8sAgentWrapper(
-        server_url=args.server,
-        langgraph_url=args.langgraph,
-        assistant_id=args.assistant,
-    ).run()
+    logging.info(f"MACP: {args.server}")
+    K8sAgentWrapper(server_url=args.server).run()
