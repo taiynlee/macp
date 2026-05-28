@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -11,6 +12,8 @@ from ..core.registry import AgentInfo, registry
 router = APIRouter()
 
 _chat_context: deque[dict] = deque(maxlen=15)
+_last_report: dict[str, tuple[str, float]] = {}  # agent_name → (content, timestamp)
+_DEDUP_WINDOW = 15  # seconds
 
 
 def _store_context(sender: str, msg: dict) -> None:
@@ -154,6 +157,15 @@ async def agent_ws(ws: WebSocket, name: str) -> None:
                     "name": name,
                 }))
                 continue
+
+            # drop identical report sent by the same agent within 15 seconds
+            if msg.get("type") == "report":
+                content = msg.get("content", "")
+                prev_content, prev_ts = _last_report.get(name, ("", 0.0))
+                now = time.monotonic()
+                if content and content == prev_content and (now - prev_ts) < _DEDUP_WINDOW:
+                    continue
+                _last_report[name] = (content, now)
 
             _store_context(name, msg)
             await manager.broadcast(_envelope(name, msg))

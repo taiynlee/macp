@@ -36,8 +36,9 @@ def _kw(*terms: str, chinese: str = "") -> re.Pattern:
 KEYWORD_RULES: list[tuple[re.Pattern, str]] = [
     (_kw("db", "database", "postgres", "sql", "connection", "query", "migration", "table", "schema", "dba",
          chinese="資料庫|資料表|查詢|連線|欄位|紀錄"), "dba_agent"),
-    (_kw("k8s", "kubernetes", "pod", "deploy", "namespace", "helm", "kubectl", "cluster", "node", "ingress",
-         chinese="容器|叢集|部署|服務"), "k8s_agent"),
+    (_kw("k8s", "kubernetes", "pod", "pods", "deploy", "deployment", "namespace", "ns",
+         "helm", "kubectl", "cluster", "node", "ingress", "svc", "pvc", "hpa", "crd",
+         chinese="容器|叢集|部署|服務|命名空間"), "k8s_agent"),
     (_kw("network", "ping", "traceroute", "bandwidth", "dns", "latency", "firewall",
          chinese="網路|防火牆|頻寬|延遲"), "network_agent"),
     (_kw("code", "review", "commit", "git", "branch", "diff", "merge",
