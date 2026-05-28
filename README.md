@@ -217,8 +217,12 @@ npm run dev
 # 確認 LangGraph 服務
 curl http://localhost:2024/ok
 
-# 啟動 wrapper（自動偵測 Windows IP + assistant ID）
-bash /mnt/d/workplace/macp/agent-sdk/run_deepagent.sh
+# 啟動 wrapper（直接指定 assistant ID）
+DEEPAGENT_ASSISTANT_ID=fe096781-5601-53d2-b2f6-0d3403f7e9ca \
+no_proxy="localhost,127.0.0.1,10.x.x.x" \
+NO_PROXY="localhost,127.0.0.1,10.x.x.x" \
+python3 /mnt/d/workplace/macp/agent-sdk/deepagent_wrapper.py \
+  --server ws://10.x.x.x:8010/ws/agent
 ```
 
 如果 LangGraph 沒在跑，需先在 WSL 或背景啟動你的 LangGraph server，再執行上面的指令。
@@ -229,12 +233,18 @@ bash /mnt/d/workplace/macp/agent-sdk/run_deepagent.sh
 
 ### Step 5 — 啟動 k8s_agent（遠端 Ubuntu）
 
+**先在 WSL 建立 SSH tunnel（讓 Ubuntu 可用 LangGraph）：**
 ```bash
-# 在遠端 Ubuntu 執行（替換 WINDOWS_IP）
-bash ~/macp/agent-sdk/run_k8s_agent.sh <WINDOWS_IP>
+# WSL terminal（保持開著）
+ssh root@10.x.x.x -R 2024:localhost:2024 -N
 ```
 
-腳本會自動從本機 LangGraph 取得 assistant ID。若需手動指定：
+**再在 Ubuntu 上啟動：**
+```bash
+bash ~/macp/agent-sdk/run_k8s_agent.sh 10.x.x.x fe096781-5601-53d2-b2f6-0d3403f7e9ca http://localhost:2024
+```
+
+若需自動抓 assistant ID：
 
 ```bash
 bash ~/macp/agent-sdk/run_k8s_agent.sh <WINDOWS_IP> <ASSISTANT_ID>
