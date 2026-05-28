@@ -192,9 +192,9 @@ class K8sAgentWrapper(AgentWrapper):
             self._claude = None
             logging.warning("ANTHROPIC_API_KEY not set — using keyword fallback")
 
-    async def _ask(self, question: str) -> str:
+    async def _ask(self, question: str, raw: str = "") -> str:
         if not self._claude:
-            return self._keyword_fallback(question)
+            return self._keyword_fallback(raw or question)
 
         messages = [{"role": "user", "content": question}]
         system = (
@@ -278,7 +278,7 @@ class K8sAgentWrapper(AgentWrapper):
             prefix += f"[聊天室記錄]\n{history}\n\n"
 
         logging.info(f"processing: {question[:80]}")
-        return await self._ask(prefix + f"[當前問題] {question}")
+        return await self._ask(prefix + f"[當前問題] {question}", raw=question)
 
     async def on_message(self, msg: dict) -> None:
         logging.info(f"recv {msg.get('type')}: {str(msg.get('content',''))[:80]}")
