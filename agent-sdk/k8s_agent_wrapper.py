@@ -157,7 +157,7 @@ class K8sAgentWrapper(AgentWrapper):
         )
         prefix = (
             f"[系統資訊]\n你是 k8s_agent，負責 Kubernetes 叢集管理，連接至 MACP 多 Agent 平台。\n"
-            f"聊天室成員：operator（用戶）、dba_agent、k8s_agent（你）。\n{reply_hint}\n"
+            f"聊天室成員：operator（用戶）、dba_agent、k8s_agent（你）、gmail_agent。\n{reply_hint}\n"
         )
         if history:
             prefix += f"[聊天室記錄]\n{history}\n\n"

@@ -174,7 +174,7 @@ class DeepAgentWrapper(AgentWrapper):
             if original_sender and original_sender not in ("", "orchestrator", "server")
             else "若要傳訊息給 k8s_agent，必須在回覆中寫 @k8s_agent。\n"
         )
-        prefix = f"[系統資訊]\n你是 dba_agent，負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent。\n{reply_hint}\n"
+        prefix = f"[系統資訊]\n你是 dba_agent，負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent、gmail_agent。\n{reply_hint}\n"
         if history:
             prefix += f"[聊天室記錄]\n{history}\n\n"
         full_question = f"{prefix}[當前問題] {question}"
