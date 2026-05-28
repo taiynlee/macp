@@ -407,6 +407,33 @@ body { height: 100vh; overflow: hidden; }
 .ts { font-size: var(--f-xs); color: var(--t3); margin-left: auto; }
 .ts-right { padding: 0 2px; }
 
+/* ── Bubble wrap + reply button ───────────────────────────────────────── */
+.bubble-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+.reply-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  background: var(--s3);
+  border: 1px solid var(--b2);
+  color: var(--t2);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity .15s, background .15s;
+  line-height: 1.6;
+}
+.bubble-wrap:hover .reply-btn {
+  opacity: 1;
+}
+.reply-btn:hover {
+  background: var(--s4);
+  color: var(--t1);
+}
+
 /* ── Bubbles ──────────────────────────────────────────────────────────── */
 .bubble {
   padding: 9px 12px;

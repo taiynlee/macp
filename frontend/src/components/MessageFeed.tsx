@@ -13,6 +13,7 @@ interface Props {
   messages: MACPMessage[]
   myName: string
   agents: AgentInfo[]
+  onReply?: (sender: string) => void
 }
 
 function formatTime(iso: string) {
@@ -47,7 +48,7 @@ function renderContent(content: string, forceCode = false) {
   )
 }
 
-export function MessageFeed({ messages, myName }: Props) {
+export function MessageFeed({ messages, myName, onReply }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -113,11 +114,20 @@ export function MessageFeed({ messages, myName }: Props) {
                 </div>
               )}
               {msg.content && (
-                <div
-                  className={`bubble ${isMine ? 'b-mine' : isReport ? 'b-report' : 'b-other'}`}
-                  style={(!isMine && isReport) ? senderStyle(msg.sender) : undefined}
-                >
-                  {renderContent(msg.content, isReport)}
+                <div className="bubble-wrap">
+                  <div
+                    className={`bubble ${isMine ? 'b-mine' : isReport ? 'b-report' : 'b-other'}`}
+                    style={(!isMine && isReport) ? senderStyle(msg.sender) : undefined}
+                  >
+                    {renderContent(msg.content, isReport)}
+                  </div>
+                  {!isMine && onReply && (
+                    <button
+                      className="reply-btn"
+                      title={`回覆 ${msg.sender}`}
+                      onClick={() => onReply(msg.sender)}
+                    >↩</button>
+                  )}
                 </div>
               )}
               {isMine && <div className="ts ts-right">{formatTime(msg.timestamp)}</div>}

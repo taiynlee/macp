@@ -56,6 +56,12 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
     inputRef.current?.focus()
   }
 
+  function handleReply(sender: string) {
+    setText(`@${sender} `)
+    historyIdx.current = -1
+    inputRef.current?.focus()
+  }
+
   function handleSend() {
     const raw = text.trim()
     if (!raw) return
@@ -108,7 +114,7 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
           <button className="btn-power" onClick={onDisconnect} title="disconnect">⏻</button>
         </div>
 
-        <MessageFeed messages={messages} myName={myName} agents={agents} />
+        <MessageFeed messages={messages} myName={myName} agents={agents} onReply={handleReply} />
 
         <div className="composer">
           {dropdownOpen && mentionOptions.length > 0 && (
