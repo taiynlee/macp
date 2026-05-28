@@ -68,7 +68,14 @@ class K8sAgentWrapper(AgentWrapper):
         self._assistant_id = assistant_id
         self._thread_id: str | None = None
 
-    async def _ask(self, question: str, timeout: int = 180) -> str:
+    async def _ask(self, question: str, timeout: int = 60) -> str:
+        try:
+            return await self._ask_lg(question, timeout)
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+            logging.warning(f"LangGraph error: {e}")
+            return "k8s_agent 暫時無法連線到 AI 後端，請稍後再試。"
+
+    async def _ask_lg(self, question: str, timeout: int = 60) -> str:
         async with httpx.AsyncClient(base_url=self._lg_url, timeout=timeout) as client:
             if self._thread_id is None:
                 r = await client.post("/threads", json={})
@@ -125,8 +132,8 @@ class K8sAgentWrapper(AgentWrapper):
                     logging.warning(f"__error__: {str(data['__error__'])[:300]}")
                     break
 
-        messages = data.get("messages", []) if isinstance(data, dict) else []
-        return _extract_text(messages) or "(k8s_agent returned no text)"
+            messages = data.get("messages", []) if isinstance(data, dict) else []
+            return _extract_text(messages) or "(k8s_agent returned no text)"
 
     async def handle_task(self, msg: dict) -> str:
         question = msg.get("content", "").strip()
