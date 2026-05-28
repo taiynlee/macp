@@ -82,10 +82,6 @@ async def user_ws(ws: WebSocket, name: str = "user") -> None:
                 agent_name = await orchestrator.route(msg)
                 if agent_name:
                     await orchestrator.dispatch(agent_name, msg, context=ctx)
-                else:
-                    # no specific match → broadcast task to all online agents
-                    for agent in registry.list_agents():
-                        await orchestrator.dispatch(agent["name"], msg, context=ctx)
 
     except WebSocketDisconnect:
         manager.disconnect(identity)
@@ -158,7 +154,8 @@ async def agent_ws(ws: WebSocket, name: str) -> None:
             _store_context(name, msg)
             await manager.broadcast(_envelope(name, msg))
 
-            # agent-to-agent: if report/discussion mentions another agent, dispatch to it
+            # agent-to-agent: if an agent's reply explicitly @mentions another agent,
+            # dispatch only to that one agent (break after first match)
             if msg.get("type") in ("report", "discussion"):
                 content = msg.get("content", "")
                 ctx = list(_chat_context)

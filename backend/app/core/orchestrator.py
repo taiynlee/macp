@@ -22,12 +22,28 @@ from .registry import registry
 logger = logging.getLogger(__name__)
 
 # (compiled_pattern, agent_name)
+def _kw(*terms: str, chinese: str = "") -> re.Pattern:
+    """Build a keyword pattern that works for both pure-English and Chinese-adjacent text.
+    Uses (?<![A-Za-z0-9])..(?![A-Za-z0-9]) instead of \\b so ASCII terms adjacent to
+    Chinese characters (e.g. 'db裡面') are still matched correctly."""
+    eng = "|".join(terms)
+    pattern = rf"(?<![A-Za-z0-9])({eng})(?![A-Za-z0-9])"
+    if chinese:
+        pattern += "|" + chinese
+    return re.compile(pattern, re.I)
+
+
 KEYWORD_RULES: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\b(db|database|postgres|sql|connection|query|migration|table|schema)\b|資料庫|資料表|查詢|連線|欄位|紀錄|dba", re.I), "dba_agent"),
-    (re.compile(r"\b(k8s|kubernetes|pod|deploy|namespace|helm|kubectl|cluster|node|ingress)\b|容器|叢集|部署|服務", re.I), "k8s_agent"),
-    (re.compile(r"\b(network|ping|traceroute|bandwidth|dns|latency|port|firewall)\b|網路|防火牆|頻寬|延遲", re.I), "network_agent"),
-    (re.compile(r"\b(code|review|commit|pull.?request|pr|git|branch|diff|merge)\b|程式|代碼|提交", re.I), "claude_dev_agent"),
-    (re.compile(r"\b(email|gmail|mail|inbox|send.?mail|reply|draft|attachment)\b|郵件|信箱|收件|寄信|回信|草稿|附件", re.I), "gmail_agent"),
+    (_kw("db", "database", "postgres", "sql", "connection", "query", "migration", "table", "schema", "dba",
+         chinese="資料庫|資料表|查詢|連線|欄位|紀錄"), "dba_agent"),
+    (_kw("k8s", "kubernetes", "pod", "deploy", "namespace", "helm", "kubectl", "cluster", "node", "ingress",
+         chinese="容器|叢集|部署|服務"), "k8s_agent"),
+    (_kw("network", "ping", "traceroute", "bandwidth", "dns", "latency", "firewall",
+         chinese="網路|防火牆|頻寬|延遲"), "network_agent"),
+    (_kw("code", "review", "commit", "git", "branch", "diff", "merge",
+         chinese="程式|代碼|提交"), "claude_dev_agent"),
+    (_kw("email", "gmail", "mail", "inbox", "draft", "attachment",
+         chinese="郵件|信箱|收件|寄信|回信|草稿|附件"), "gmail_agent"),
 ]
 
 _ROUTE_SYSTEM = """You are a task router for a multi-agent platform.
