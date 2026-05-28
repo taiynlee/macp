@@ -82,6 +82,10 @@ async def user_ws(ws: WebSocket, name: str = "user") -> None:
                 agent_name = await orchestrator.route(msg)
                 if agent_name:
                     await orchestrator.dispatch(agent_name, msg, context=ctx)
+                else:
+                    # no specific match → broadcast to all agents (e.g. "hi", general questions)
+                    for agent in registry.list_agents():
+                        await orchestrator.dispatch(agent["name"], msg, context=ctx)
 
     except WebSocketDisconnect:
         manager.disconnect(identity)
