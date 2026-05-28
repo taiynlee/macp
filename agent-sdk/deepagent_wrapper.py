@@ -170,11 +170,17 @@ class DeepAgentWrapper(AgentWrapper):
 
         original_sender = msg.get("original_sender", "")
         reply_hint = (
-            f"此訊息來自 {original_sender}。若對話尚未結束，回覆結尾必須加上 @{original_sender} 讓對方繼續收到。\n"
+            f"此訊息來自 {original_sender}。若對話尚未結束需要對方繼續配合，才在回覆結尾加上 @{original_sender}；若已回答完畢則不需要。\n"
             if original_sender and original_sender not in ("", "orchestrator", "server")
-            else "若要傳訊息給 k8s_agent，必須在回覆中寫 @k8s_agent。\n"
+            else ""
         )
-        prefix = f"[系統資訊]\n你是 dba_agent，負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent、gmail_agent。\n{reply_hint}\n"
+        rules = (
+            "行為規則：\n"
+            "1. 只在確實需要對方繼續配合時才 @對方，不要主動幫忙把訊息轉發給其他 agent。\n"
+            "2. 若問題不屬於你的職責，簡短說明原因即可，不要 @其他 agent 代為處理。\n"
+            "3. 禁止無實質內容的回覆，例如：好的、收到、了解、再見、謝謝、👍。\n"
+        )
+        prefix = f"[系統資訊]\n你是 dba_agent，負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent、gmail_agent。\n{reply_hint}{rules}\n"
         if history:
             prefix += f"[聊天室記錄]\n{history}\n\n"
         full_question = f"{prefix}[當前問題] {question}"
