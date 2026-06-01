@@ -106,10 +106,6 @@ export function MessageFeed({ messages, myName, onReply }: Props) {
               {!isMine && (
                 <div className="msg-meta">
                   <span className="msg-name" style={{ color: agentColors(msg.sender).accent }}>{msg.sender}</span>
-                  {msg.target && msg.target !== 'all' && (
-                    <span className="msg-to">→ {msg.target}</span>
-                  )}
-                  {isReport && <span className="pill-report">report</span>}
                   <span className="ts">{formatTime(msg.timestamp)}</span>
                 </div>
               )}
