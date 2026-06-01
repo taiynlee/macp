@@ -25,7 +25,7 @@ function parseTarget(text: string): { target: string; content: string } {
 export function ChatRoom({ messages, agents, connected, myName, onSend, onDisconnect, theme, onToggleTheme }: Props) {
   const [text, setText] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const historyRef = useRef<string[]>([])
   const historyIdx = useRef<number>(-1)
 
@@ -47,9 +47,17 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
     return q ? opts.filter(n => n.toLowerCase().startsWith(q)) : opts
   }, [agents, mentionQuery])
 
+  function autoResize() {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
   function handleChange(val: string) {
     setText(val)
     setDropdownOpen(/@\S*$/.test(val))
+    requestAnimationFrame(autoResize)
   }
 
   function pickMention(name: string) {
@@ -74,6 +82,9 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
     historyIdx.current = -1
     setText('')
     setDropdownOpen(false)
+    requestAnimationFrame(() => {
+      if (inputRef.current) inputRef.current.style.height = 'auto'
+    })
     inputRef.current?.focus()
   }
 
@@ -134,10 +145,11 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
           )}
           <div className="composer-box">
             <span className="target-tag">@{targetHint}</span>
-            <input
+            <textarea
               ref={inputRef}
               className="composer-input"
               value={text}
+              rows={1}
               onChange={e => handleChange(e.target.value)}
               onKeyDown={handleKey}
               onBlur={() => setTimeout(() => setDropdownOpen(false), 120)}

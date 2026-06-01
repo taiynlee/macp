@@ -592,7 +592,7 @@ body { height: 100vh; overflow: hidden; }
 
 .composer-box {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   background: var(--s2);
   border: 1px solid var(--b1);
@@ -627,6 +627,11 @@ body { height: 100vh; overflow: hidden; }
   padding: 7px 4px;
   outline: none;
   min-width: 0;
+  resize: none;
+  overflow-y: hidden;
+  line-height: 1.5;
+  max-height: 160px;
+  overflow-y: auto;
 }
 .composer-input::placeholder { color: var(--t3); }
 
