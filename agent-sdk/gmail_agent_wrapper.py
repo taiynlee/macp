@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 
 import httpx
 
@@ -137,15 +138,16 @@ class GmailAgentWrapper(AgentWrapper):
 
         original_sender = msg.get("original_sender", "")
         reply_hint = (
-            f"此訊息來自 {original_sender}。若對話尚未結束需要對方繼續配合，才在回覆結尾加上 @{original_sender}；若已回答完畢則不需要。\n"
+            f"此訊息來自 {original_sender}。任務完成後不需要 @{original_sender}；只有當你需要對方提供更多資訊才能繼續時才加。\n"
             if original_sender and original_sender not in ("", "orchestrator", "server")
             else ""
         )
         rules = (
             "行為規則：\n"
-            "1. 只在確實需要對方繼續配合時才 @對方，不要主動幫忙把訊息轉發給其他 agent。\n"
-            "2. 若問題不屬於你的職責，簡短說明原因即可，不要 @其他 agent 代為處理。\n"
-            "3. 禁止無實質內容的回覆，例如：好的、收到、了解、再見、謝謝、👍。\n"
+            "1. 任務完成後不要在結尾加 @任何人。\n"
+            "2. 只在確實需要對方繼續配合時才 @對方，不要主動轉發給其他 agent。\n"
+            "3. 若問題不屬於你的職責，簡短說明原因即可，不要 @其他 agent 代為處理。\n"
+            "4. 禁止無實質內容的回覆，例如：好的、收到、了解、再見、謝謝、👍。\n"
         )
         prefix = (
             f"[系統資訊]\n你是 gmail_agent，負責 Gmail 郵件管理，連接至 MACP 多 Agent 平台。\n"
@@ -155,7 +157,11 @@ class GmailAgentWrapper(AgentWrapper):
             prefix += f"[聊天室記錄]\n{history}\n\n"
 
         logging.info(f"forwarding to LangGraph: {question[:80]}")
-        return await self._ask(prefix + f"[當前問題] {question}")
+        result = await self._ask(prefix + f"[當前問題] {question}")
+        # strip trailing @mentions added by the model after task completion
+        if original_sender:
+            result = re.sub(rf'\s*@{re.escape(original_sender)}\s*$', '', result).strip()
+        return result
 
     async def on_message(self, msg: dict) -> None:
         logging.info(f"recv {msg.get('type')}: {str(msg.get('content',''))[:80]}")
