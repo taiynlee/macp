@@ -1,17 +1,31 @@
 #!/usr/bin/env bash
 # Run DeepAgent MACP bridge from WSL.
-# Usage: bash run_deepagent.sh [MACP_SERVER_URL] [LANGGRAPH_URL]
+# Usage: bash run_deepagent.sh [IP_OR_URL] [LANGGRAPH_URL]
 #
 # Examples:
 #   bash run_deepagent.sh                              # auto-detect Windows IP
-#   bash run_deepagent.sh ws://192.168.1.100:8010/ws/agent
-#   DEEPAGENT_ASSISTANT_ID=abc123 bash run_deepagent.sh
+#   bash run_deepagent.sh 10.34.126.119               # explicit Windows IP
+#   bash run_deepagent.sh ws://10.34.126.119:8010/ws/agent
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GW=$(ip route | grep default | awk '{print $3}' | head -1)
 
-SERVER="${1:-ws://${GW}:8010/ws/agent}"
+# Prefer the real Windows IP (non-172.x WSL gateway) from routing table
+GW=$(ip route | grep default | awk '{print $3}' | grep -v '^172\.' | head -1)
+if [ -z "$GW" ]; then
+  GW=$(ip route | grep default | awk '{print $3}' | head -1)
+fi
+
+ARG1="${1:-}"
+if [[ "$ARG1" == ws://* ]]; then
+  SERVER="$ARG1"
+elif [[ "$ARG1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  SERVER="ws://${ARG1}:8010/ws/agent"
+  GW="$ARG1"
+else
+  SERVER="ws://${GW}:8010/ws/agent"
+fi
+
 LANGGRAPH_URL="${2:-http://localhost:2024}"
 
 # bypass corporate proxy for local Windows host and LangGraph
