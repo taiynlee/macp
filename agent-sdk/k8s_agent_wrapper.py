@@ -54,11 +54,6 @@ def _parse_decision(text: str) -> str | None:
 class K8sAgentWrapper(AgentWrapper):
     name = "k8s_agent"
     capabilities = [
-        "list_pods",
-        "get_logs",
-        "describe_node",
-        "list_namespaces",
-        "scale_deployment",
         "exec_kubectl",
     ]
 
