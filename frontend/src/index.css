@@ -481,6 +481,8 @@ body { height: 100vh; overflow: hidden; }
 
 .ts { font-size: var(--f-xs); color: var(--t3); margin-left: auto; }
 .ts-right { padding: 0 2px; }
+.msg-meta-mine { display: flex; justify-content: flex-end; margin-bottom: 2px; }
+.msg-to-mine { font-size: var(--f-xs); color: var(--t3); }
 
 /* ── Bubble wrap + reply button ───────────────────────────────────────── */
 .bubble-wrap {

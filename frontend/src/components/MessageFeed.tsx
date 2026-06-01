@@ -109,6 +109,11 @@ export function MessageFeed({ messages, myName, onReply }: Props) {
                   <span className="ts">{formatTime(msg.timestamp)}</span>
                 </div>
               )}
+              {isMine && msg.target && msg.target !== 'all' && (
+                <div className="msg-meta-mine">
+                  <span className="msg-to-mine">→ @{msg.target}</span>
+                </div>
+              )}
               {msg.content && (
                 <div className="bubble-wrap">
                   <div
