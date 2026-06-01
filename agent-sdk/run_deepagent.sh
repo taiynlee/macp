@@ -4,8 +4,8 @@
 #
 # Examples:
 #   bash run_deepagent.sh                              # auto-detect Windows IP
-#   bash run_deepagent.sh 10.34.126.119               # explicit Windows IP
-#   bash run_deepagent.sh ws://10.34.126.119:8010/ws/agent
+#   bash run_deepagent.sh 10.x.x.x                    # explicit Windows IP
+#   bash run_deepagent.sh ws://10.x.x.x:8010/ws/agent
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
