@@ -163,6 +163,11 @@ body { height: 100vh; overflow: hidden; }
 }
 @keyframes blink { 0%,100% { opacity:1 } 50% { opacity:.3 } }
 
+.brand-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
 .brand-name {
   font-size: 14px;
   font-weight: 800;
@@ -170,6 +175,13 @@ body { height: 100vh; overflow: hidden; }
   background: linear-gradient(90deg, var(--ac), #818cf8);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+.brand-sub {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  color: var(--t3);
+  white-space: nowrap;
 }
 
 .sidebar-me {

@@ -20,7 +20,10 @@ export function AgentList({ agents, connected, myName }: Props) {
       <div className="sidebar-header">
         <div className="sidebar-brand">
           <span className="brand-pulse" />
-          <span className="brand-name">MACP Multi-Agent Communication Platform</span>
+          <div className="brand-stack">
+            <span className="brand-name">MACP</span>
+            <span className="brand-sub">Multi-Agent Communication Platform</span>
+          </div>
         </div>
         <div className="sidebar-me">
           <span className={`status-dot ${connected ? 'on' : 'off'}`} />
