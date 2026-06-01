@@ -26,7 +26,7 @@ export function AnnouncementBoard({ messages, agents }: Props) {
   return (
     <div className="board">
       <div className="board-header">
-        <span className="board-title">公告欄</span>
+        <span className="board-title">Job 公告欄</span>
         {alerts.length > 0 && <span className="board-count">{alerts.length}</span>}
       </div>
 

@@ -110,7 +110,7 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
 
       <div className="chat-panel">
         <div className="topbar">
-          <span className="topbar-channel">Tommy 的 Agent 聊天室</span>
+          <span className="topbar-channel">Agent 協作平台</span>
           <button className="btn-power" onClick={onDisconnect} title="disconnect">⏻</button>
         </div>
 
