@@ -72,22 +72,28 @@ class K8sAgentWrapper(AgentWrapper):
 
     async def _ask_lg(self, question: str, timeout: int = 60) -> str:
         async with httpx.AsyncClient(base_url=self._lg_url, timeout=timeout) as client:
-            if self._thread_id is None:
-                r = await client.post("/threads", json={})
-                r.raise_for_status()
-                self._thread_id = r.json()["thread_id"]
-                logging.info(f"created thread {self._thread_id}")
+            for attempt in range(2):
+                if self._thread_id is None:
+                    r = await client.post("/threads", json={})
+                    r.raise_for_status()
+                    self._thread_id = r.json()["thread_id"]
+                    logging.info(f"created thread {self._thread_id}")
 
-            r = await client.post(
-                f"/threads/{self._thread_id}/runs/wait",
-                json={
-                    "assistant_id": self._assistant_id,
-                    "input": {"messages": [{"role": "user", "content": question}]},
-                },
-            )
-            if r.status_code != 200:
-                logging.warning(f"runs/wait {r.status_code}: {r.text[:300]}")
-                r.raise_for_status()
+                r = await client.post(
+                    f"/threads/{self._thread_id}/runs/wait",
+                    json={
+                        "assistant_id": self._assistant_id,
+                        "input": {"messages": [{"role": "user", "content": question}]},
+                    },
+                )
+                if r.status_code == 404 and attempt == 0:
+                    logging.warning(f"thread {self._thread_id} expired, creating new one")
+                    self._thread_id = None
+                    continue
+                if r.status_code != 200:
+                    logging.warning(f"runs/wait {r.status_code}: {r.text[:300]}")
+                    r.raise_for_status()
+                break
             data = r.json()
 
             for _ in range(8):

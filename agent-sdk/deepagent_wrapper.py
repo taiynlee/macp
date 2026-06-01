@@ -85,23 +85,29 @@ class DeepAgentWrapper(AgentWrapper):
     async def _ask_deepagent(self, question: str, timeout: int = 180) -> str:
         """Send question to deepagent; ask user via chat for each interrupt."""
         async with httpx.AsyncClient(base_url=DEEPAGENT_URL, timeout=timeout) as client:
-            if self._thread_id is None:
-                r = await client.post("/threads", json={})
-                r.raise_for_status()
-                self._thread_id = r.json()["thread_id"]
-                logging.info(f"[dba_agent] created thread {self._thread_id}")
-            thread_id = self._thread_id
+            for attempt in range(2):
+                if self._thread_id is None:
+                    r = await client.post("/threads", json={})
+                    r.raise_for_status()
+                    self._thread_id = r.json()["thread_id"]
+                    logging.info(f"[dba_agent] created thread {self._thread_id}")
+                thread_id = self._thread_id
 
-            r = await client.post(
-                f"/threads/{thread_id}/runs/wait",
-                json={
-                    "assistant_id": ASSISTANT_ID,
-                    "input": {"messages": [{"role": "user", "content": question}]},
-                },
-            )
-            if r.status_code != 200:
-                logging.warning(f"[dba_agent] runs/wait {r.status_code}: {r.text[:300]}")
-                r.raise_for_status()
+                r = await client.post(
+                    f"/threads/{thread_id}/runs/wait",
+                    json={
+                        "assistant_id": ASSISTANT_ID,
+                        "input": {"messages": [{"role": "user", "content": question}]},
+                    },
+                )
+                if r.status_code == 404 and attempt == 0:
+                    logging.warning(f"[dba_agent] thread {thread_id} expired, creating new one")
+                    self._thread_id = None
+                    continue
+                if r.status_code != 200:
+                    logging.warning(f"[dba_agent] runs/wait {r.status_code}: {r.text[:300]}")
+                    r.raise_for_status()
+                break
             data = r.json()
 
             for _ in range(8):
