@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChatRoom } from './components/ChatRoom'
 import { useWebSocket } from './hooks/useWebSocket'
 
@@ -6,6 +6,18 @@ export function App() {
   const { messages, agents, connected, connect, disconnect, send } = useWebSocket()
   const [nameInput, setNameInput] = useState('')
   const [myName, setMyName] = useState('')
+  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+    (localStorage.getItem('macp-theme') as 'dark' | 'light') || 'dark'
+  )
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('macp-theme', theme)
+  }, [theme])
+
+  function toggleTheme() {
+    setTheme(t => t === 'dark' ? 'light' : 'dark')
+  }
 
   function handleConnect() {
     const name = nameInput.trim() || 'operator'
@@ -44,6 +56,8 @@ export function App() {
       myName={myName}
       onSend={send}
       onDisconnect={disconnect}
+      theme={theme}
+      onToggleTheme={toggleTheme}
     />
   )
 }

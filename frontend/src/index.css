@@ -38,6 +38,24 @@
   line-height: 1.5;
 }
 
+/* ── Light theme ───────────────────────────────────────────────────────── */
+:root[data-theme="light"] {
+  --s0: #f1f5f9;
+  --s1: #ffffff;
+  --s2: #f8fafc;
+  --s3: #e2e8f0;
+  --s4: #cbd5e1;
+  --b1: #e2e8f0;
+  --b2: #cbd5e1;
+  --t1: #0f172a;
+  --t2: #475569;
+  --t3: #94a3b8;
+  --ac:  #0284c7;
+  --ac2: #0369a1;
+  color: var(--t1);
+  background: var(--s0);
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { height: 100vh; overflow: hidden; }
 #root { height: 100vh; display: flex; }
@@ -315,6 +333,21 @@ body { height: 100vh; overflow: hidden; }
   transition: border-color .15s, color .15s;
 }
 .btn-power:hover { border-color: var(--red); color: var(--red); }
+.btn-theme {
+  background: none;
+  border: 1px solid var(--b1);
+  color: var(--t3);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color .15s, color .15s;
+}
+.btn-theme:hover { border-color: var(--ac); color: var(--ac); }
 
 /* ── Feed ─────────────────────────────────────────────────────────────── */
 .feed {

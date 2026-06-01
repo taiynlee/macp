@@ -12,6 +12,8 @@ interface Props {
   myName: string
   onSend: (payload: Partial<MACPMessage>) => void
   onDisconnect: () => void
+  theme: 'dark' | 'light'
+  onToggleTheme: () => void
 }
 
 function parseTarget(text: string): { target: string; content: string } {
@@ -20,7 +22,7 @@ function parseTarget(text: string): { target: string; content: string } {
   return { target: 'all', content: text.trim() }
 }
 
-export function ChatRoom({ messages, agents, connected, myName, onSend, onDisconnect }: Props) {
+export function ChatRoom({ messages, agents, connected, myName, onSend, onDisconnect, theme, onToggleTheme }: Props) {
   const [text, setText] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -111,6 +113,9 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
       <div className="chat-panel">
         <div className="topbar">
           <span className="topbar-channel">Agent 協作平台</span>
+          <button className="btn-theme" onClick={onToggleTheme} title="切換主題">
+            {theme === 'dark' ? '☀' : '🌙'}
+          </button>
           <button className="btn-power" onClick={onDisconnect} title="disconnect">⏻</button>
         </div>
 
