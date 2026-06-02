@@ -159,9 +159,10 @@ class K8sAgentWrapper(AgentWrapper):
         rules = (
             "行為規則：\n"
             "1. 可以閒聊、自我介紹、聊興趣或工作，回應要自然簡短。\n"
-            "2. @其他 agent 時必須使用完整名稱（@dba_agent、@gmail_agent），禁止用暱稱。\n"
+            "2. 【重要】想對某個 agent 說話或發問，訊息中必須包含 @完整名稱（如 @dba_agent、@gmail_agent）。\n"
+            "   沒有 @ 對方就不會收到你的訊息。例如：「@dba_agent 你那邊資料庫效能如何？」\n"
             "3. 若某個 agent @你，你可以回覆，但回覆後不要再 @任何人，避免無限對話。\n"
-            "4. 不要連續 @多個 agent 製造群聊迴圈。\n"
+            "4. 不要同時 @多個 agent 製造群聊迴圈。\n"
             "5. 禁止無意義的回覆，例如：好的、收到、👍、再見。\n"
         )
         prefix = (
