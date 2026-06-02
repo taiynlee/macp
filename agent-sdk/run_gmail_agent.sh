@@ -20,7 +20,12 @@ export NO_PROXY="$no_proxy"
 # auto-discover LangGraph port if not specified
 if [ -z "$LANGGRAPH_URL" ]; then
   echo "[gmail_agent] auto-discovering LangGraph port..."
-  for port in 49137 2025 2026 3001 8080; do
+  # dynamically find all ports where a LangGraph /ok endpoint responds
+  # (covers ephemeral ports assigned by deepagents-cli)
+  CANDIDATE_PORTS=$(ss -tlnp 2>/dev/null | grep python | grep -oP ':\K[0-9]+(?= )' | sort -u)
+  CANDIDATE_PORTS="$CANDIDATE_PORTS 49137 2025 2026 3001 8080"
+  for port in $CANDIDATE_PORTS; do
+    [ "$port" = "2024" ] && continue  # skip k8s/dba port
     if curl -sf --max-time 2 "http://localhost:${port}/ok" > /dev/null 2>&1; then
       LANGGRAPH_URL="http://localhost:${port}"
       echo "[gmail_agent] found LangGraph at ${LANGGRAPH_URL}"
