@@ -170,9 +170,9 @@ async def agent_ws(ws: WebSocket, name: str) -> None:
             _store_context(name, msg)
             await manager.broadcast(_envelope(name, msg))
 
-            # agent-to-agent: if an agent's reply explicitly @mentions another agent,
-            # dispatch only to that one agent (break after first match)
-            if msg.get("type") in ("report", "discussion"):
+            # agent-to-agent: dispatch @mentioned agent, but only one hop
+            # (forwarded messages don't trigger further dispatch to prevent loops)
+            if msg.get("type") in ("report", "discussion") and not msg.get("_forwarded"):
                 content = msg.get("content", "")
                 ctx = list(_chat_context)
                 for a in registry.list_agents():
@@ -180,6 +180,7 @@ async def agent_ws(ws: WebSocket, name: str) -> None:
                         await orchestrator.dispatch(a["name"], {
                             "content": content,
                             "sender": name,
+                            "_forwarded": True,
                         }, context=ctx)
                         break
 

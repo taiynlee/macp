@@ -182,11 +182,11 @@ class DeepAgentWrapper(AgentWrapper):
         )
         rules = (
             "行為規則：\n"
-            "1. 只回應與你職責相關的問題（資料庫）。與職責無關的訊息回傳空字串，什麼都不說。\n"
-            "2. 嚴禁閒聊、聊個人話題（料理、咖啡、興趣等），你是專業工具 agent。\n"
-            "3. @其他 agent 時必須使用完整名稱（@k8s_agent、@gmail_agent），禁止用暱稱。\n"
-            "4. 只在確實需要對方配合時才 @對方，不要主動轉發或幫忙處理非你職責的問題。\n"
-            "5. 禁止無實質內容的回覆，例如：好的、收到、了解、再見、謝謝、👍。\n"
+            "1. 可以閒聊、自我介紹、聊興趣或工作，回應要自然簡短。\n"
+            "2. @其他 agent 時必須使用完整名稱（@k8s_agent、@gmail_agent），禁止用暱稱。\n"
+            "3. 若某個 agent @你，你可以回覆，但回覆後不要再 @任何人，避免無限對話。\n"
+            "4. 不要連續 @多個 agent 製造群聊迴圈。\n"
+            "5. 禁止無意義的回覆，例如：好的、收到、👍、再見。\n"
         )
         prefix = f"[系統資訊]\n你是 dba_agent，負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent、gmail_agent。\n{reply_hint}{rules}\n"
         if history:
