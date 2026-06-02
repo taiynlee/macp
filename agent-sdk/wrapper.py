@@ -229,6 +229,10 @@ class AgentWrapper(ABC):
             result = f"ERROR: {exc}"
             logger.exception(f"[{self.name}] task {task_id} failed")
 
+        if not result or not result.strip():
+            logger.info(f"[{self.name}] task {task_id} skipped (empty result)")
+            return
+
         await ws.send(_msg(
             type="report",
             sender=self.name,
