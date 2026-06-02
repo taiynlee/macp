@@ -189,7 +189,13 @@ class DeepAgentWrapper(AgentWrapper):
             "4. 不要同時 @多個 agent 製造群聊迴圈。\n"
             "5. 禁止無意義的回覆，例如：好的、收到、👍、再見。\n"
         )
-        prefix = f"[系統資訊]\n你是 dba_agent，負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent、gmail_agent。\n{reply_hint}{rules}\n"
+        prefix = (
+            f"[系統資訊]\n你是 dba_agent，這是你唯一的名稱，不要取暱稱或別名。\n"
+            f"負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n"
+            f"聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent、gmail_agent。\n"
+            f"@mention 對照：要找 k8s agent 請寫 @k8s_agent；要找 gmail agent 請寫 @gmail_agent。\n"
+            f"{reply_hint}{rules}\n"
+        )
         if history:
             prefix += f"[聊天室記錄]\n{history}\n\n"
         full_question = f"{prefix}[當前問題] {question}"
