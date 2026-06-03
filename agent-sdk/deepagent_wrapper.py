@@ -298,6 +298,7 @@ class DeepAgentWrapper(AgentWrapper):
                     content = str(msg.get("content", "")).strip()
                     if "</think>" in content:
                         content = content.split("</think>", 1)[-1].strip()
+                    logging.info(f"[dba_agent] schedule raw response: {content[:200]}")
                     # extract JSON array even if wrapped in markdown code block
                     match = _re.search(r'\[.*?\]', content, _re.DOTALL)
                     if match:
