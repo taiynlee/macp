@@ -283,10 +283,10 @@ class DeepAgentWrapper(AgentWrapper):
                     json={
                         "assistant_id": ASSISTANT_ID,
                         "input": {"messages": [{"role": "user", "content":
-                            f"你是 dba_agent，連接至 MACP 多 Agent 平台。"
-                            f"請列出你應該定期執行的排程任務（例如健康檢查、資料備份等）。"
-                            f"只回傳 JSON array，格式：[{{\"name\":\"job_name\",\"cron\":\"*/5 * * * *\",\"desc\":\"說明\"}}]。"
-                            f"若沒有排程任務，回傳：[]"}]},
+                            f"請查看你的 AGENTS.md 中 '## Scheduled Jobs' 區段，"
+                            f"將其中定義的排程任務以 JSON array 回傳，格式：[{{\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}}]。"
+                            f"只回傳 JSON array，不要加任何說明文字。"
+                            f"若 AGENTS.md 沒有定義 Scheduled Jobs，回傳：[]"}]},
                     },
                 )
                 if r.status_code != 200:
