@@ -272,6 +272,7 @@ class DeepAgentWrapper(AgentWrapper):
 
     async def _discover_schedule(self) -> list[dict]:
         """Ask the LangGraph agent what scheduled jobs it needs."""
+        import json as _json, re as _re
         try:
             async with httpx.AsyncClient(base_url=DEEPAGENT_URL, timeout=30) as client:
                 r = await client.post("/threads", json={})
@@ -282,10 +283,10 @@ class DeepAgentWrapper(AgentWrapper):
                     json={
                         "assistant_id": ASSISTANT_ID,
                         "input": {"messages": [{"role": "user", "content":
-                            "What scheduled maintenance/monitoring jobs should you run? "
-                            "Reply ONLY with a JSON array of objects with keys: name, cron, desc. "
-                            'Example: [{"name":"health_check","cron":"*/5 * * * *","desc":"Check DB every 5 min"}]. '
-                            "If none, reply: []"}]},
+                            f"你是 dba_agent，連接至 MACP 多 Agent 平台。"
+                            f"請列出你應該定期執行的排程任務（例如健康檢查、資料備份等）。"
+                            f"只回傳 JSON array，格式：[{{\"name\":\"job_name\",\"cron\":\"*/5 * * * *\",\"desc\":\"說明\"}}]。"
+                            f"若沒有排程任務，回傳：[]"}]},
                     },
                 )
                 if r.status_code != 200:
@@ -297,13 +298,16 @@ class DeepAgentWrapper(AgentWrapper):
                     content = str(msg.get("content", "")).strip()
                     if "</think>" in content:
                         content = content.split("</think>", 1)[-1].strip()
-                    try:
-                        import json as _json
-                        jobs = _json.loads(content)
-                        if isinstance(jobs, list):
-                            return jobs
-                    except Exception:
-                        pass
+                    # extract JSON array even if wrapped in markdown code block
+                    match = _re.search(r'\[.*?\]', content, _re.DOTALL)
+                    if match:
+                        try:
+                            jobs = _json.loads(match.group())
+                            if isinstance(jobs, list):
+                                logging.info(f"[dba_agent] schedule discovered: {jobs}")
+                                return jobs
+                        except Exception:
+                            pass
         except Exception as e:
             logging.warning(f"[dba_agent] schedule discovery failed: {e}")
         return []
