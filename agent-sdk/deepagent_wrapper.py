@@ -276,12 +276,6 @@ class DeepAgentWrapper(AgentWrapper):
             await self.update_capabilities(caps)
             logging.info(f"[dba_agent] capabilities: {caps}")
         await self.send_alert("dba_agent online — DB ready", priority="normal")
-        await self.send_schedule([
-            {"name": "connection_check", "cron": "*/5 * * * *", "desc": "每5分鐘檢查資料庫連線"},
-            {"name": "slow_query_scan",  "cron": "0 * * * *",   "desc": "每小時掃描慢查詢"},
-            {"name": "daily_backup",     "cron": "0 2 * * *",   "desc": "每日凌晨2點備份"},
-            {"name": "vacuum_analyze",   "cron": "0 3 * * 0",   "desc": "每週日凌晨3點 VACUUM"},
-        ])
 
 
 if __name__ == "__main__":

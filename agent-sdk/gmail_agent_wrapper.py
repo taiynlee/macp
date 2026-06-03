@@ -222,10 +222,6 @@ class GmailAgentWrapper(AgentWrapper):
             await self.update_capabilities(caps)
             logging.info(f"[gmail_agent] capabilities: {caps}")
         await self.send_alert("gmail_agent online — Gmail ready", priority="normal")
-        await self.send_schedule([
-            {"name": "inbox_check",   "cron": "*/10 * * * *", "desc": "每10分鐘檢查收件匣"},
-            {"name": "daily_summary", "cron": "0 9 * * *",    "desc": "每日早上9點郵件摘要"},
-        ])
 
 
 if __name__ == "__main__":

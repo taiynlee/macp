@@ -231,12 +231,6 @@ class K8sAgentWrapper(AgentWrapper):
             await self.update_capabilities(caps)
             logging.info(f"[k8s_agent] capabilities: {caps}")
         await self.send_alert("k8s_agent online — K8s ready", priority="normal")
-        await self.send_schedule([
-            {"name": "pod_health_check", "cron": "*/3 * * * *",  "desc": "每3分鐘檢查 Pod 狀態"},
-            {"name": "resource_usage",   "cron": "*/10 * * * *", "desc": "每10分鐘收集資源用量"},
-            {"name": "log_cleanup",      "cron": "0 3 * * *",    "desc": "每日凌晨3點清理舊 Log"},
-            {"name": "cert_check",       "cron": "0 8 * * *",    "desc": "每日早上8點檢查憑證效期"},
-        ])
 
 
 if __name__ == "__main__":
