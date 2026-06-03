@@ -58,13 +58,7 @@ def _parse_decision(text: str) -> str | None:
 
 class DeepAgentWrapper(AgentWrapper):
     name = "dba_agent"
-    capabilities = [
-        "query_database",
-        "check_connections",
-        "describe_schema",
-        "run_sql",
-        "explain_query",
-    ]
+    capabilities = []  # populated dynamically from LangGraph on connect
 
     def __init__(self, server_url: str) -> None:
         super().__init__(server_url=server_url)
@@ -239,7 +233,48 @@ class DeepAgentWrapper(AgentWrapper):
                 return False
         return True  # other jobs: assume OK until actually implemented
 
+    async def _discover_capabilities(self) -> list[str]:
+        """Ask the LangGraph agent what tools it has, return as capability list."""
+        try:
+            async with httpx.AsyncClient(base_url=DEEPAGENT_URL, timeout=30) as client:
+                r = await client.post("/threads", json={})
+                r.raise_for_status()
+                thread_id = r.json()["thread_id"]
+                r = await client.post(
+                    f"/threads/{thread_id}/runs/wait",
+                    json={
+                        "assistant_id": ASSISTANT_ID,
+                        "input": {"messages": [{"role": "user", "content":
+                            "List all your available tools/functions as a JSON array of strings. "
+                            "Reply ONLY with the JSON array, nothing else. Example: [\"tool1\",\"tool2\"]. "
+                            "If you have no tools reply: []"}]},
+                    },
+                )
+                if r.status_code != 200:
+                    return []
+                messages = r.json().get("messages", [])
+                for msg in reversed(messages):
+                    if msg.get("type") in ("human", "tool"):
+                        continue
+                    content = str(msg.get("content", "")).strip()
+                    if "</think>" in content:
+                        content = content.split("</think>", 1)[-1].strip()
+                    try:
+                        import json as _json
+                        tools = _json.loads(content)
+                        if isinstance(tools, list):
+                            return [str(t) for t in tools if t]
+                    except Exception:
+                        pass
+        except Exception as e:
+            logging.warning(f"[dba_agent] capability discovery failed: {e}")
+        return []
+
     async def on_connect(self) -> None:
+        caps = await self._discover_capabilities()
+        if caps:
+            await self.update_capabilities(caps)
+            logging.info(f"[dba_agent] capabilities: {caps}")
         await self.send_alert("dba_agent online — DB ready", priority="normal")
         await self.send_schedule([
             {"name": "connection_check", "cron": "*/5 * * * *", "desc": "每5分鐘檢查資料庫連線"},

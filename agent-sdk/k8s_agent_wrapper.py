@@ -53,9 +53,7 @@ def _parse_decision(text: str) -> str | None:
 
 class K8sAgentWrapper(AgentWrapper):
     name = "k8s_agent"
-    capabilities = [
-        "exec_kubectl",
-    ]
+    capabilities = []  # populated dynamically from LangGraph on connect
 
     def __init__(self, server_url: str, langgraph_url: str, assistant_id: str) -> None:
         super().__init__(server_url=server_url)
@@ -191,7 +189,47 @@ class K8sAgentWrapper(AgentWrapper):
                 return False
         return True
 
+    async def _discover_capabilities(self) -> list[str]:
+        try:
+            async with httpx.AsyncClient(base_url=self._lg_url, timeout=30) as client:
+                r = await client.post("/threads", json={})
+                r.raise_for_status()
+                thread_id = r.json()["thread_id"]
+                r = await client.post(
+                    f"/threads/{thread_id}/runs/wait",
+                    json={
+                        "assistant_id": self._assistant_id,
+                        "input": {"messages": [{"role": "user", "content":
+                            "List all your available tools/functions as a JSON array of strings. "
+                            "Reply ONLY with the JSON array, nothing else. Example: [\"tool1\",\"tool2\"]. "
+                            "If you have no tools reply: []"}]},
+                    },
+                )
+                if r.status_code != 200:
+                    return []
+                messages = r.json().get("messages", [])
+                for msg in reversed(messages):
+                    if msg.get("type") in ("human", "tool"):
+                        continue
+                    content = str(msg.get("content", "")).strip()
+                    if "</think>" in content:
+                        content = content.split("</think>", 1)[-1].strip()
+                    try:
+                        import json as _json
+                        tools = _json.loads(content)
+                        if isinstance(tools, list):
+                            return [str(t) for t in tools if t]
+                    except Exception:
+                        pass
+        except Exception as e:
+            logging.warning(f"[k8s_agent] capability discovery failed: {e}")
+        return []
+
     async def on_connect(self) -> None:
+        caps = await self._discover_capabilities()
+        if caps:
+            await self.update_capabilities(caps)
+            logging.info(f"[k8s_agent] capabilities: {caps}")
         await self.send_alert("k8s_agent online — K8s ready", priority="normal")
         await self.send_schedule([
             {"name": "pod_health_check", "cron": "*/3 * * * *",  "desc": "每3分鐘檢查 Pod 狀態"},

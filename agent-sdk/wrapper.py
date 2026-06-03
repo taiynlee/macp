@@ -85,6 +85,10 @@ class AgentWrapper(ABC):
         self._jobs = jobs
         await self.send(type="system", action="set_schedule", jobs=jobs)
 
+    async def update_capabilities(self, capabilities: list[str]) -> None:
+        self.capabilities = capabilities
+        await self.send(type="system", action="update_capabilities", capabilities=capabilities)
+
     async def report_job(self, job_name: str, success: bool) -> None:
         await self.send(type="system", action="job_result", job=job_name, success=success)
 
