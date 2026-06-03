@@ -159,6 +159,12 @@ async def agent_ws(ws: WebSocket, name: str) -> None:
 
             if msg_type == "system" and action == "set_schedule":
                 registry.set_schedule(name, msg.get("jobs", []))
+                await manager.broadcast(json.dumps({
+                    "type": "system",
+                    "action": "schedule_updated",
+                    "name": name,
+                    "timestamp": _now(),
+                }))
                 continue
 
             if msg_type == "system" and action == "job_result":
