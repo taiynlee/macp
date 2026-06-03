@@ -270,11 +270,53 @@ class DeepAgentWrapper(AgentWrapper):
             logging.warning(f"[dba_agent] capability discovery failed: {e}")
         return []
 
+    async def _discover_schedule(self) -> list[dict]:
+        """Ask the LangGraph agent what scheduled jobs it needs."""
+        try:
+            async with httpx.AsyncClient(base_url=DEEPAGENT_URL, timeout=30) as client:
+                r = await client.post("/threads", json={})
+                r.raise_for_status()
+                thread_id = r.json()["thread_id"]
+                r = await client.post(
+                    f"/threads/{thread_id}/runs/wait",
+                    json={
+                        "assistant_id": ASSISTANT_ID,
+                        "input": {"messages": [{"role": "user", "content":
+                            "What scheduled maintenance/monitoring jobs should you run? "
+                            "Reply ONLY with a JSON array of objects with keys: name, cron, desc. "
+                            'Example: [{"name":"health_check","cron":"*/5 * * * *","desc":"Check DB every 5 min"}]. '
+                            "If none, reply: []"}]},
+                    },
+                )
+                if r.status_code != 200:
+                    return []
+                messages = r.json().get("messages", [])
+                for msg in reversed(messages):
+                    if msg.get("type") in ("human", "tool"):
+                        continue
+                    content = str(msg.get("content", "")).strip()
+                    if "</think>" in content:
+                        content = content.split("</think>", 1)[-1].strip()
+                    try:
+                        import json as _json
+                        jobs = _json.loads(content)
+                        if isinstance(jobs, list):
+                            return jobs
+                    except Exception:
+                        pass
+        except Exception as e:
+            logging.warning(f"[dba_agent] schedule discovery failed: {e}")
+        return []
+
     async def on_connect(self) -> None:
         caps = await self._discover_capabilities()
         if caps:
             await self.update_capabilities(caps)
             logging.info(f"[dba_agent] capabilities: {caps}")
+        jobs = await self._discover_schedule()
+        if jobs:
+            await self.send_schedule(jobs)
+            logging.info(f"[dba_agent] schedule: {jobs}")
         await self.send_alert("dba_agent online — DB ready", priority="normal")
 
 

@@ -180,7 +180,7 @@ class GmailAgentWrapper(AgentWrapper):
                 return False
         return True
 
-    async def _discover_capabilities(self) -> list[str]:
+    async def _ask_discovery(self, prompt: str) -> str:
         try:
             async with httpx.AsyncClient(base_url=self._lg_url, timeout=30) as client:
                 r = await client.post("/threads", json={})
@@ -188,32 +188,47 @@ class GmailAgentWrapper(AgentWrapper):
                 thread_id = r.json()["thread_id"]
                 r = await client.post(
                     f"/threads/{thread_id}/runs/wait",
-                    json={
-                        "assistant_id": self._assistant_id,
-                        "input": {"messages": [{"role": "user", "content":
-                            "List all your available tools/functions as a JSON array of strings. "
-                            "Reply ONLY with the JSON array, nothing else. Example: [\"tool1\",\"tool2\"]. "
-                            "If you have no tools reply: []"}]},
-                    },
+                    json={"assistant_id": self._assistant_id,
+                          "input": {"messages": [{"role": "user", "content": prompt}]}},
                 )
                 if r.status_code != 200:
-                    return []
-                messages = r.json().get("messages", [])
-                for msg in reversed(messages):
+                    return ""
+                for msg in reversed(r.json().get("messages", [])):
                     if msg.get("type") in ("human", "tool"):
                         continue
                     content = str(msg.get("content", "")).strip()
                     if "</think>" in content:
                         content = content.split("</think>", 1)[-1].strip()
-                    try:
-                        import json as _json
-                        tools = _json.loads(content)
-                        if isinstance(tools, list):
-                            return [str(t) for t in tools if t]
-                    except Exception:
-                        pass
+                    if content:
+                        return content
         except Exception as e:
-            logging.warning(f"[gmail_agent] capability discovery failed: {e}")
+            logging.warning(f"[gmail_agent] discovery failed: {e}")
+        return ""
+
+    async def _discover_capabilities(self) -> list[str]:
+        raw = await self._ask_discovery(
+            "List all your available tools/functions as a JSON array of strings. "
+            "Reply ONLY with the JSON array. Example: [\"tool1\",\"tool2\"]. If none: []")
+        try:
+            import json as _json
+            tools = _json.loads(raw)
+            if isinstance(tools, list):
+                return [str(t) for t in tools if t]
+        except Exception:
+            pass
+        return []
+
+    async def _discover_schedule(self) -> list[dict]:
+        raw = await self._ask_discovery(
+            "What scheduled maintenance/monitoring jobs should you run? "
+            "Reply ONLY with a JSON array: [{\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}]. If none: []")
+        try:
+            import json as _json
+            jobs = _json.loads(raw)
+            if isinstance(jobs, list):
+                return jobs
+        except Exception:
+            pass
         return []
 
     async def on_connect(self) -> None:
@@ -221,6 +236,10 @@ class GmailAgentWrapper(AgentWrapper):
         if caps:
             await self.update_capabilities(caps)
             logging.info(f"[gmail_agent] capabilities: {caps}")
+        jobs = await self._discover_schedule()
+        if jobs:
+            await self.send_schedule(jobs)
+            logging.info(f"[gmail_agent] schedule: {jobs}")
         await self.send_alert("gmail_agent online — Gmail ready", priority="normal")
 
 
