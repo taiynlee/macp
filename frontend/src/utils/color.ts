@@ -6,8 +6,15 @@ export function agentHue(name: string): number {
   return PALETTE[Math.abs(h) % PALETTE.length]
 }
 
-export function agentColors(name: string) {
+export function agentColors(name: string, light = false) {
   const h = agentHue(name)
+  if (light) return {
+    bg:     `hsl(${h},60%,95%)`,
+    border: `hsl(${h},55%,75%)`,
+    text:   `hsl(${h},55%,22%)`,
+    accent: `hsl(${h},65%,40%)`,
+    header: `hsl(${h},50%,88%)`,
+  }
   return {
     bg:     `hsl(${h},55%,9%)`,
     border: `hsl(${h},55%,24%)`,

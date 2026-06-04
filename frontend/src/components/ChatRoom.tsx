@@ -158,7 +158,7 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
           <button className="btn-power" onClick={onDisconnect} title="disconnect">⏻</button>
         </div>
 
-        <MessageFeed messages={messages} myName={myName} agents={agents} onReply={handleReply} />
+        <MessageFeed messages={messages} myName={myName} agents={agents} onReply={handleReply} theme={theme} />
 
         <div className="composer">
           {dropdownOpen && mentionOptions.length > 0 && (

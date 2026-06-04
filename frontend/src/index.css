@@ -64,6 +64,11 @@
   background: #fff7ed;
   border-color: #fed7aa;
 }
+:root[data-theme="light"] .b-other {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  color: var(--t1);
+}
 :root[data-theme="light"] .b-mine {
   background: #dbeafe;
   border-color: #93c5fd;
@@ -627,6 +632,8 @@ body { height: 100vh; overflow: hidden; }
   border-radius: 5px;
   white-space: nowrap;
   flex-shrink: 0;
+  align-self: center;
+  line-height: 1.4;
 }
 
 .composer-input {

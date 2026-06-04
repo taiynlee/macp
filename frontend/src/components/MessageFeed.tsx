@@ -4,8 +4,8 @@ import { Avatar } from './Avatar'
 
 import { agentColors, agentHue } from '../utils/color'
 
-function senderStyle(name: string): React.CSSProperties {
-  const c = agentColors(name)
+function senderStyle(name: string, light: boolean): React.CSSProperties {
+  const c = agentColors(name, light)
   return { background: c.bg, borderColor: c.border, color: c.text, fontFamily: 'inherit' }
 }
 
@@ -14,6 +14,7 @@ interface Props {
   myName: string
   agents: AgentInfo[]
   onReply?: (sender: string) => void
+  theme?: 'dark' | 'light'
 }
 
 function formatTime(iso: string) {
@@ -48,7 +49,8 @@ function renderContent(content: string, forceCode = false) {
   )
 }
 
-export function MessageFeed({ messages, myName, onReply }: Props) {
+export function MessageFeed({ messages, myName, onReply, theme }: Props) {
+  const isLight = theme === 'light'
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -118,7 +120,7 @@ export function MessageFeed({ messages, myName, onReply }: Props) {
                 <div className="bubble-wrap">
                   <div
                     className={`bubble ${isMine ? 'b-mine' : isReport ? 'b-report' : 'b-other'}`}
-                    style={(!isMine && isReport) ? senderStyle(msg.sender) : undefined}
+                    style={(!isMine && isReport) ? senderStyle(msg.sender, isLight) : undefined}
                   >
                     {renderContent(msg.content, isReport)}
                   </div>
