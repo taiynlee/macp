@@ -353,6 +353,13 @@ class DeepAgentWrapper(AgentWrapper):
                 return False
         return True
 
+    def _load_file_schedule(self) -> list[dict]:
+        try:
+            saved = json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
+            return [j for j in saved if isinstance(j, dict) and j.get("name") and j.get("cron")]
+        except Exception:
+            return []
+
     async def _init_from_agent(self) -> tuple[list[str], list[dict]]:
         """
         Ask LangGraph to recall its current capabilities + schedule from memory.
@@ -444,18 +451,15 @@ class DeepAgentWrapper(AgentWrapper):
         reply = await self._ask_deepagent(init_query)
         await self._apply_markers(reply)
 
-        # merge file-based jobs into whatever the agent reported
-        try:
-            saved = json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
-            file_jobs = [j for j in saved if isinstance(j, dict) and j.get("name") and j.get("cron")]
-            existing_names = {j.get("name") for j in self._jobs}
-            extras = [j for j in file_jobs if j.get("name") not in existing_names]
-            if extras:
-                await self.send_schedule(list(self._jobs) + extras)
-        except Exception:
-            pass
-        if not self._jobs:
-            await self.send_schedule(_DEFAULT_SCHEDULE)
+        # build final schedule: agent + file + defaults, all merged
+        all_jobs = list(self._jobs)
+        seen = {j.get("name") for j in all_jobs}
+        for source in (self._load_file_schedule(), _DEFAULT_SCHEDULE):
+            for j in source:
+                if j.get("name") not in seen:
+                    all_jobs.append(j)
+                    seen.add(j.get("name"))
+        await self.send_schedule(all_jobs)
 
         await self.send_alert("dba_agent online — DB ready", priority="normal")
 
