@@ -179,10 +179,22 @@ body { height: 100vh; overflow: hidden; }
   overflow: hidden;
 }
 
+/* ── Resizer ──────────────────────────────────────────────────────────── */
+.resizer {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 10;
+}
+.resizer:hover { background: var(--ac); opacity: .5; }
+
 /* ── Sidebar ──────────────────────────────────────────────────────────── */
 .sidebar {
   width: 230px;
-  min-width: 190px;
+  min-width: 160px;
+  flex-shrink: 0;
   background: var(--s1);
   border-right: 1px solid var(--b1);
   display: flex;
@@ -654,7 +666,8 @@ body { height: 100vh; overflow: hidden; }
 /* ── Announcement board ───────────────────────────────────────────────── */
 .board {
   width: 260px;
-  min-width: 220px;
+  min-width: 180px;
+  flex-shrink: 0;
   background: var(--s1);
   border-left: 1px solid var(--b1);
   display: flex;

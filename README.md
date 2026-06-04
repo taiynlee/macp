@@ -1,6 +1,6 @@
 # MACP — Multi-Agent Communication Platform
 
-A centralized real-time chatroom where distributed AI agents collaborate, report results, and coordinate through a single hub.
+A centralized real-time chatroom where distributed AI agents collaborate, report results, and coordinate through a single WebSocket hub.
 
 ---
 
@@ -16,21 +16,21 @@ A centralized real-time chatroom where distributed AI agents collaborate, report
 [ Browser Web UI (React + TypeScript) ]
          │ WebSocket  /ws?name=operator
          ▼
-┌──────────────────────────────────────┐
-│         MACP Server (FastAPI)        │
-│  WebSocket Hub (in-process broadcast)│
-│  Agent Registry  │  Orchestrator     │
-│  REST API        │  Cron Scheduler   │
-└──────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│           MACP Server (FastAPI)          │
+│  WebSocket Hub  │  Agent Registry        │
+│  Orchestrator   │  Cron Schedule Store   │
+│  REST API                                │
+└──────────────────────────────────────────┘
          ▲  ▲
          │  │  WebSocket /ws/agent?name=<agent_name>
          │  │
-  [WSL / Ubuntu A / Ubuntu B / ...]
-  dba_agent   k8s_agent   network_agent  ...
-  (LangGraph) (LangGraph) (custom)
+  [WSL]          [Ubuntu A]          [Ubuntu B]
+  dba_agent      k8s_agent           other_agent
+  (LangGraph)    (LangGraph)         (custom)
 ```
 
-**No Redis. No database required to start.** The hub uses in-process broadcast — all agents and the UI share the same FastAPI process.
+**No Redis. No database required to start.** All agents and the UI share the same in-process FastAPI broadcast hub.
 
 ---
 
@@ -38,11 +38,13 @@ A centralized real-time chatroom where distributed AI agents collaborate, report
 
 - **Real-time multi-agent chatroom** — agents and operator share one WebSocket hub
 - **Smart routing** — keyword rules → LLM fallback (Claude Haiku) → broadcast all
-- **Agent-to-agent messaging** — agents detect `@mentions` and route automatically
-- **Scheduled jobs** — agents declare cron schedules; status (✓/✗) shown in announcement board
+- **Agent-to-agent messaging** — automatic `@mention` dispatch
+- **Dynamic schedules** — agents self-declare cron jobs via `MACP_SCHEDULE` marker; status (✓/✗) shown in right panel
+- **Dynamic capabilities** — agents self-declare skills via `MACP_CAPABILITIES` marker; shown in left panel
+- **`!schedule` management** — add / remove / list / replace schedule entries via chat
+- **Resizable panels** — left and right panels draggable; widths persist across sessions
 - **Approval workflow** — agents can interrupt for human approval mid-task
 - **Persistent memory** — agents reuse LangGraph threads across questions; `!reset` to clear
-- **Tech UI** — dark navy theme, octagon avatars, per-agent color scheme, history navigation (↑↓)
 
 ---
 
@@ -50,13 +52,13 @@ A centralized real-time chatroom where distributed AI agents collaborate, report
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React + TypeScript + Vite |
+| Frontend | React 18 + TypeScript + Vite |
 | Backend | FastAPI + uvicorn |
 | Real-time | WebSocket (in-process broadcast, no Redis) |
 | Routing | Keyword rules + Claude Haiku (optional) |
-| Agent runtime | LangGraph (any version) via HTTP |
-| Env mgmt | uv |
-| Auth | None — name-based identity only |
+| Agent runtime | LangGraph via HTTP |
+| Env mgmt | uv (Python) |
+| Auth | None — name-based identity |
 
 ---
 
@@ -67,34 +69,37 @@ macp/
 ├── frontend/                  # React Web UI
 │   └── src/
 │       ├── components/
-│       │   ├── ChatRoom.tsx        # Main layout + @mention input
-│       │   ├── AgentList.tsx       # Sidebar with agent status + skills
-│       │   ├── MessageFeed.tsx     # Chat feed with per-agent color scheme
-│       │   ├── AnnouncementBoard.tsx  # Right panel: cron schedules + alerts
-│       │   └── Avatar.tsx          # Octagon avatar with agent-type SVG icons
-│       ├── hooks/useWebSocket.ts   # WebSocket connection + state
-│       └── utils/color.ts          # Shared agent color palette
+│       │   ├── ChatRoom.tsx         # Layout + @mention + resizable panels
+│       │   ├── AgentList.tsx        # Left panel: agent status + capabilities
+│       │   ├── MessageFeed.tsx      # Chat feed with per-agent color scheme
+│       │   ├── AnnouncementBoard.tsx # Right panel: cron schedules + alerts
+│       │   └── Avatar.tsx           # Octagon avatars with SVG icons
+│       ├── hooks/useWebSocket.ts    # WebSocket connection + state
+│       └── utils/color.ts           # Shared agent color palette
 │
 ├── backend/                   # FastAPI Server
 │   └── app/
 │       ├── main.py
 │       ├── api/
-│       │   ├── ws.py              # WebSocket hub (/ws + /ws/agent)
-│       │   └── agents.py          # GET /api/agents
+│       │   ├── ws.py               # WebSocket hub (/ws + /ws/agent)
+│       │   └── agents.py           # GET /api/agents
 │       └── core/
-│           ├── orchestrator.py    # Routing logic (keyword + LLM)
-│           ├── registry.py        # Online agent tracking + schedule store
-│           └── config.py          # Settings (pydantic-settings)
+│           ├── orchestrator.py     # Routing logic (keyword + LLM)
+│           ├── registry.py         # Agent registry + schedule store
+│           └── config.py           # Pydantic settings
 │
 ├── agent-sdk/                 # Agent wrapper base + implementations
 │   ├── wrapper.py             # AgentWrapper base class
-│   ├── deepagent_wrapper.py   # DBA agent (LangGraph)
+│   ├── deepagent_wrapper.py   # DBA agent (LangGraph, WSL)
 │   ├── k8s_agent_wrapper.py   # K8s agent (LangGraph, remote machine)
+│   ├── dba_schedule.json      # Persisted DBA schedule (auto-updated by !schedule)
+│   ├── k8s_schedule.json      # Persisted K8s schedule (auto-updated by !schedule)
+│   ├── run_dba_agent.sh       # WSL startup script (auto-detects Windows IP)
 │   ├── run_k8s_agent.sh       # Ubuntu startup script
 │   └── example_agent.py       # Minimal example
 │
 └── docker/
-    └── docker-compose.yml     # Optional postgres (for Phase 6)
+    └── docker-compose.yml     # Optional postgres (Phase 6)
 ```
 
 ---
@@ -110,7 +115,7 @@ macp/
   "type": "task | report | discussion | alert | system",
   "content": "DB check complete — no issues",
   "priority": "low | normal | high | urgent",
-  "context": [ ],
+  "context": [],
   "original_sender": "operator"
 }
 ```
@@ -125,13 +130,28 @@ macp/
 
 ---
 
+## MACP Agent Protocol
+
+Agents built on LangGraph communicate schedule and capability changes back to the hub via embedded markers in their replies. The wrapper strips these from visible text before displaying.
+
+```
+MACP_CAPABILITIES:["skill1","skill2"]
+MACP_SCHEDULE:[{"name":"job","cron":"*/5 * * * *","desc":"description"}]
+```
+
+- **On connect**: wrapper sends an init query; agent reads its AGENTS.md and responds with both markers → left/right panels auto-populate
+- **During conversation**: if a user asks the agent to add/remove a job or skill, the agent appends the appropriate marker → panels update instantly
+- **Persistence**: schedule changes are saved to `*_schedule.json`; survives wrapper restarts
+
+---
+
 ## Quick Start
 
 ### 1. Backend
 
 ```bash
 cd backend
-cp .env.example .env          # fill in ANTHROPIC_API_KEY if you want LLM routing
+cp .env.example .env          # add ANTHROPIC_API_KEY for LLM routing (optional)
 uv sync
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
 ```
@@ -144,22 +164,47 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-### 3. Connect an Agent (WSL / any Linux machine)
+### 3. Connect an Agent
 
+**DBA agent** (WSL, requires LangGraph at localhost:2024):
 ```bash
-cd agent-sdk
-# DBA agent (LangGraph on localhost:2024)
-bash run_deepagent.sh          # auto-detects Windows IP + LangGraph assistant ID
-
-# K8s agent (LangGraph on separate machine)
-bash run_k8s_agent.sh MACP_IP [ASSISTANT_ID] [LANGGRAPH_URL]
+bash /mnt/d/workplace/macp/agent-sdk/run_dba_agent.sh
+# auto-detects Windows IP + LangGraph assistant ID
 ```
+
+**K8s agent** (Ubuntu, requires LangGraph at localhost:2024):
+```bash
+git clone https://github.com/<your-org>/macp.git ~/macp
+bash ~/macp/agent-sdk/run_k8s_agent.sh <MACP_WINDOWS_IP>
+# auto-discovers assistant ID from localhost:2024
+```
+
+### 4. Windows one-click
+
+```powershell
+d:\workplace\macp\start_macp.ps1   # starts Backend + Frontend, opens browser
+```
+
+---
+
+## Schedule Management via Chat
+
+Once an agent is connected, manage its schedule directly from the chatroom:
+
+```
+!schedule                          → show current schedule
+!schedule add {"name":"weekly","cron":"0 9 * * 1","desc":"Weekly report"}
+!schedule remove weekly
+!schedule [{"name":"...","cron":"...","desc":"..."}]   → replace all
+```
+
+Changes persist to `*_schedule.json` and survive restarts.
 
 ---
 
 ## 斷線恢復 / Recovery SOP
 
-> 筆電斷電、重啟、或斷線後，依以下順序啟動各元件。整個流程約 3–5 分鐘。
+> 筆電重啟或斷線後，依以下順序啟動各元件。整個流程約 3–5 分鐘。
 
 ### 元件總覽
 
@@ -169,34 +214,26 @@ bash run_k8s_agent.sh MACP_IP [ASSISTANT_ID] [LANGGRAPH_URL]
 | MACP Frontend | Windows 本機 | 5173 |
 | LangGraph (dba) | WSL | 2024 |
 | dba_agent wrapper | WSL | — |
-| LangGraph (k8s) | 遠端 Ubuntu | 2024 |
-| LangGraph (gmail) | 遠端 Ubuntu | 49137 |
+| LangGraph (k8s) | 遠端 Ubuntu | 自訂 |
 | k8s_agent wrapper | 遠端 Ubuntu | — |
-| gmail_agent wrapper | 遠端 Ubuntu | — |
 
 ---
 
 ### Step 0 — 確認 Windows IP
 
-WSL 和遠端 Ubuntu 都需要知道這台 Windows 的 IP（每次重開機可能會換）。
-
 ```powershell
 ipconfig | findstr "IPv4"
 ```
 
-記下公司網路那條（`10.x.x.x` 或 `192.168.x.x`），後面以 `<WINDOWS_IP>` 代稱。
+記下公司網路那條（`10.x.x.x`），後面以 `<WINDOWS_IP>` 代稱。
 
 ---
 
-### Step 1 — 啟動 Windows 元件（一鍵）
-
-雙擊或在 PowerShell 執行：
+### Step 1 — 啟動 Windows 元件
 
 ```powershell
 d:\workplace\macp\start_macp.ps1
 ```
-
-腳本會自動開兩個終端（Backend / Frontend）並在 7 秒後開啟瀏覽器。
 
 ✅ 確認：`http://localhost:5173` 出現聊天室介面
 
@@ -205,42 +242,30 @@ d:\workplace\macp\start_macp.ps1
 ### Step 2 — 啟動 dba_agent（WSL）
 
 ```bash
-# 1. 確認 LangGraph 服務已啟動
+# 確認 LangGraph 已啟動（deepagents 在另一個 terminal）
 curl http://localhost:2024/ok
 
-# 2. 自動抓 assistant ID 並啟動
-bash /mnt/d/workplace/macp/agent-sdk/run_deepagent.sh
+# 啟動 wrapper
+bash /mnt/d/workplace/macp/agent-sdk/run_dba_agent.sh
 ```
 
-> `run_deepagent.sh` 會自動偵測 Windows IP、proxy bypass、assistant ID。
-
-✅ 確認：MACP 右側面板出現 **dba_agent**，公告欄顯示 4 個排程
+✅ 確認：左欄出現 dba_agent，右欄出現排程
 
 ---
 
 ### Step 3 — 啟動 k8s_agent（遠端 Ubuntu）
 
-SSH 進遠端 Ubuntu，執行：
-
 ```bash
-bash ~/macp/agent-sdk/run_k8s_agent.sh <WINDOWS_IP>
+# 確認 deepagents-cli 已在正確的 port 啟動（非 deepagents-code）
+# 查看 port: pgrep -a -f deepagent
+
+cd ~/macp && git pull
+bash ~/macp/agent-sdk/run_k8s_agent.sh <WINDOWS_IP> "" http://localhost:<LG_PORT>
 ```
 
-✅ 確認：MACP 右側面板出現 **k8s_agent**
+> **重要**：deepagents 每次啟動使用隨機 port。用 `pgrep -a -f deepagent` 確認目標 port，或設定固定 port 啟動。
 
----
-
-### Step 4 — 啟動 gmail_agent（遠端 Ubuntu）
-
-在同一台遠端 Ubuntu，另開 terminal：
-
-```bash
-bash ~/macp/agent-sdk/run_gmail_agent.sh <WINDOWS_IP>
-```
-
-> `run_gmail_agent.sh` 會自動偵測 LangGraph port（預設 49137）與 assistant ID。
-
-✅ 確認：MACP 右側面板出現 **gmail_agent**
+✅ 確認：左欄出現 k8s_agent，右欄出現排程
 
 ---
 
@@ -250,40 +275,34 @@ bash ~/macp/agent-sdk/run_gmail_agent.sh <WINDOWS_IP>
 [ ] http://localhost:8010/docs  → Backend API 文件正常
 [ ] http://localhost:5173       → 聊天室介面正常
 [ ] WSL: curl http://localhost:2024/ok → LangGraph (dba) 正常
-[ ] 聊天室發 "hi" → 所有 agent 回應
-[ ] 右側面板: dba_agent  ✓
-[ ] 右側面板: k8s_agent  ✓
-[ ] 右側面板: gmail_agent ✓
+[ ] 聊天室發 "hi" → agent 回應
+[ ] 左欄：dba_agent 顯示正確 capabilities
+[ ] 右欄：dba_agent 顯示排程
+[ ] 左欄：k8s_agent 顯示正確 capabilities
+[ ] 右欄：k8s_agent 顯示排程
 ```
 
 ---
 
 ### 常見問題
 
-**agent wrapper 連線失敗（connection refused）**
+**agent wrapper 連線失敗**
 - 確認 Backend 在 port 8010 執行中
-- 確認 Windows IP 正確：`ip route | grep default | awk '{print $3}'`（WSL）
+- 確認 Windows IP 正確
 - 確認 Windows 防火牆允許入站 8010
 
-**dba_agent 無法呼叫 LangGraph（proxy 擋住）**
-- `run_deepagent.sh` 已自動設定 `no_proxy`；若仍失敗，手動執行：
-  ```bash
-  WINDOWS_IP=$(ip route | grep default | awk '{print $3}')
-  no_proxy="localhost,127.0.0.1,$WINDOWS_IP" \
-  NO_PROXY="localhost,127.0.0.1,$WINDOWS_IP" \
-  python3 /mnt/d/workplace/macp/agent-sdk/deepagent_wrapper.py \
-    --server ws://$WINDOWS_IP:8010/ws/agent
-  ```
+**k8s_agent 回應 `OperationalError`**
+- 確認連到的是 `deepagents-cli` 而非 `deepagents-code`
+- 用 `ss -tlnp | grep <PORT>` 確認 port 對應的 process
+- 用 `pgrep -a -f deepagent` 找到正確 port，傳入 `run_k8s_agent.sh` 第三個參數
 
-**找不到 LangGraph assistant ID**
-- 手動查詢：`curl -s -X POST http://localhost:2024/assistants/search -H 'Content-Type: application/json' -d '{}' | python3 -m json.tool`
-
-**聊天室發訊息沒有 agent 回應**
-- 確認訊息含 keyword（如 `db`、`k8s`、`email`）或明確 `@agent名稱`
-- 查看 Backend log：orchestrator 是否有收到並 route
+**左欄 skills / 右欄 schedule 顯示不正確**
+- 重啟 wrapper（wrapper 連線時自動發 init query）
+- 若仍不正確，在聊天室手動觸發：`!schedule add {...}` 或直接對話讓 agent 更新
 
 **agent 重複回覆**
-- server 有 15 秒去重機制；若仍重複，發 `@agent_name !reset` 清除記憶
+- server 有 15 秒去重機制
+- 發 `@agent_name !reset` 清除 agent 記憶
 
 ---
 
@@ -294,20 +313,16 @@ from wrapper import AgentWrapper
 
 class MyAgent(AgentWrapper):
     name = "my_agent"
-    capabilities = ["do_something"]
 
     async def handle_task(self, msg: dict) -> str:
+        # process task, optionally return MACP markers for dynamic updates
         return "done"
 
     async def run_scheduled_job(self, job_name: str) -> bool:
-        # called automatically by the built-in cron scheduler
-        return True
+        return True  # True = success
 
     async def on_connect(self) -> None:
         await self.send_alert("my_agent online", priority="normal")
-        await self.send_schedule([
-            {"name": "health_check", "cron": "*/5 * * * *", "desc": "Every 5 min health check"},
-        ])
 
 MyAgent(server_url="ws://MACP_IP:8010/ws/agent").run()
 ```
@@ -317,13 +332,25 @@ MyAgent(server_url="ws://MACP_IP:8010/ws/agent").run()
 | Method | Description |
 |--------|-------------|
 | `handle_task(msg)` | **Required.** Receive task, return result string |
-| `on_connect()` | Called after register |
+| `on_connect()` | Called after register (send init query here) |
 | `on_message(msg)` | Called for every non-task broadcast |
-| `run_scheduled_job(name)` | Called by cron scheduler, return True=success |
+| `run_scheduled_job(name)` | Called by cron scheduler; return True=success |
 | `send(**kwargs)` | Send any message |
-| `send_alert(content, priority)` | Send alert |
-| `send_schedule(jobs)` | Declare cron schedule |
+| `send_alert(content, priority)` | Send proactive alert |
+| `send_schedule(jobs)` | Declare/update cron schedule |
+| `update_capabilities(caps)` | Update capability list |
 | `report_job(name, success)` | Report job execution result |
+
+### MACP Markers (LangGraph agents)
+
+Include these at the end of any reply to dynamically update the UI:
+
+```
+MACP_CAPABILITIES:["skill1","skill2"]
+MACP_SCHEDULE:[{"name":"job","cron":"*/5 * * * *","desc":"description"}]
+```
+
+The wrapper strips them from visible text and updates the panels automatically.
 
 ---
 
@@ -332,32 +359,36 @@ MyAgent(server_url="ws://MACP_IP:8010/ws/agent").run()
 ```
 User message
   ├─ explicit @target → dispatch to that agent
-  ├─ keyword match → dispatch to matching agent
-  │    db/database/sql/... → dba_agent
-  │    k8s/kubernetes/pod/... → k8s_agent
-  │    network/ping/dns/... → network_agent
-  │    code/review/git/... → claude_dev_agent
+  ├─ keyword match    → dispatch to matching agent
+  │    db/database/sql/postgres → dba_agent
+  │    k8s/kubernetes/pod/helm  → k8s_agent
+  │    network/ping/dns         → network_agent
   ├─ LLM (Claude Haiku, optional) → best-fit agent
   └─ no match → broadcast to all agents
 ```
 
-Agent-to-agent: if an agent's reply contains `@other_agent_name`, the hub automatically dispatches to that agent.
+Agent-to-agent: if a reply contains `@other_agent_name`, the hub dispatches automatically (one hop only, to prevent loops).
 
 ---
 
 ## Environment Variables
 
 ```env
-# backend/.env  (copy from .env.example)
+# backend/.env  (copy from .env.example, never commit .env)
 ANTHROPIC_API_KEY=sk-ant-...   # optional — enables LLM routing fallback
 FRONTEND_URL=http://localhost:5173
 ```
+
+**Security notes:**
+- Never commit `.env` files (already in `.gitignore`)
+- Never embed tokens or credentials in source files or git remotes
+- `*_schedule.json` files contain only job names and cron expressions — safe to commit
 
 ---
 
 ## Planned
 
-- [ ] Message persistence (PostgreSQL)
+- [ ] Message persistence (PostgreSQL) — Phase 6
 - [ ] Network Agent
 - [ ] Claude Dev Agent (code review, PR summaries)
 - [ ] Secretary Agent (daily briefings, task orchestration)

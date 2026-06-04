@@ -5,6 +5,7 @@ import { agentColors } from '../utils/color'
 interface Props {
   messages: MACPMessage[]
   agents: AgentInfo[]
+  style?: React.CSSProperties
 }
 
 function formatTime(iso: string) {
@@ -12,7 +13,7 @@ function formatTime(iso: string) {
   catch { return '' }
 }
 
-export function AnnouncementBoard({ messages, agents }: Props) {
+export function AnnouncementBoard({ messages, agents, style }: Props) {
   const alerts = messages.filter(m => m.type === 'alert' && m.priority === 'urgent')
   const scheduled = agents.filter(a => a.schedule && a.schedule.length > 0)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -24,7 +25,7 @@ export function AnnouncementBoard({ messages, agents }: Props) {
   const isEmpty = alerts.length === 0 && scheduled.length === 0
 
   return (
-    <div className="board">
+    <div className="board" style={style}>
       <div className="board-header">
         <span className="board-title">Job 公告欄</span>
         {alerts.length > 0 && <span className="board-count">{alerts.length}</span>}

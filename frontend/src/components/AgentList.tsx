@@ -5,6 +5,7 @@ interface Props {
   agents: AgentInfo[]
   connected: boolean
   myName: string
+  style?: React.CSSProperties
 }
 
 function timeSince(iso: string): string {
@@ -14,9 +15,9 @@ function timeSince(iso: string): string {
   return `${Math.floor(s / 3600)}h`
 }
 
-export function AgentList({ agents, connected, myName }: Props) {
+export function AgentList({ agents, connected, myName, style }: Props) {
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={style}>
       <div className="sidebar-header">
         <div className="sidebar-brand">
           <span className="brand-pulse" />

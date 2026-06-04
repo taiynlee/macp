@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react'
+import { useRef, useState, useMemo, useCallback, useEffect } from 'react'
 import type { AgentInfo, MACPMessage } from '../hooks/useWebSocket'
 import { AgentList } from './AgentList'
 import { MessageFeed } from './MessageFeed'
@@ -16,6 +16,31 @@ interface Props {
   onToggleTheme: () => void
 }
 
+function useResizable(key: string, initial: number, min: number, max: number, invert = false) {
+  const [width, setWidth] = useState(() => {
+    const saved = localStorage.getItem(key)
+    return saved ? Number(saved) : initial
+  })
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = width
+    const onMove = (ev: MouseEvent) => {
+      const delta = invert ? startX - ev.clientX : ev.clientX - startX
+      const next = Math.max(min, Math.min(max, startW + delta))
+      setWidth(next)
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [width, min, max, invert])
+  useEffect(() => { localStorage.setItem(key, String(width)) }, [key, width])
+  return { width, onMouseDown }
+}
+
 function parseTarget(text: string): { target: string; content: string } {
   const m = text.match(/^@(\S+)\s+([\s\S]+)$/)
   if (m) return { target: m[1], content: m[2].trim() }
@@ -23,6 +48,8 @@ function parseTarget(text: string): { target: string; content: string } {
 }
 
 export function ChatRoom({ messages, agents, connected, myName, onSend, onDisconnect, theme, onToggleTheme }: Props) {
+  const left  = useResizable('panel-left',  230, 160, 400)
+  const right = useResizable('panel-right', 260, 180, 480, true)
   const [text, setText] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -119,7 +146,8 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
 
   return (
     <div className="layout">
-      <AgentList agents={agents} connected={connected} myName={myName} />
+      <AgentList agents={agents} connected={connected} myName={myName} style={{ width: left.width }} />
+      <div className="resizer" onMouseDown={left.onMouseDown} />
 
       <div className="chat-panel">
         <div className="topbar">
@@ -166,7 +194,8 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
         </div>
       </div>
 
-      <AnnouncementBoard messages={messages} agents={agents} />
+      <div className="resizer" onMouseDown={right.onMouseDown} />
+      <AnnouncementBoard messages={messages} agents={agents} style={{ width: right.width }} />
     </div>
   )
 }

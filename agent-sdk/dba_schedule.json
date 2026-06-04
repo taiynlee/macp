@@ -1,17 +1,17 @@
 [
   {
-    "name": "connection_check",
-    "cron": "*/5 * * * *",
-    "desc": "Ping LangGraph /ok"
-  },
-  {
-    "name": "fubon_monthly",
-    "cron": "0 9 3 * *",
-    "desc": "富邦每月三號"
-  },
-  {
-    "name": "db_connection_check",
+    "name": "每3小時測試連線",
     "cron": "0 */3 * * *",
-    "desc": "DB 連線測試"
+    "desc": "每三小時測試DB連線"
+  },
+  {
+    "name": "connection_check",
+    "cron": "0 * * * *",
+    "desc": "Ping LangGraph /ok 確認存活"
+  },
+  {
+    "name": "富邦對帳單解析",
+    "cron": "0 9 3 * *",
+    "desc": "每月3號上午9點執行富邦對帳單解析job"
   }
 ]
