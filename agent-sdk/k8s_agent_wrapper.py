@@ -336,11 +336,16 @@ class K8sAgentWrapper(AgentWrapper):
         reply = await self._ask(init_query)
         await self._apply_markers(reply)
 
-        # fallback: if schedule still empty, load from file
+        # merge file-based jobs into whatever the agent reported
+        # file is source of truth for wrapper-managed jobs (e.g. chat_initiate)
+        file_jobs = self._load_schedule()
+        existing_names = {j.get("name") for j in self._jobs}
+        extras = [j for j in file_jobs if j.get("name") not in existing_names]
+        if extras:
+            await self.send_schedule(list(self._jobs) + extras)
+
         if not self._jobs:
-            jobs = self._load_schedule()
-            if jobs:
-                await self.send_schedule(jobs)
+            await self.send_schedule(_DEFAULT_SCHEDULE)
 
         await self.send_alert("k8s_agent online — K8s ready", priority="normal")
 

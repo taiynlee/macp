@@ -444,15 +444,16 @@ class DeepAgentWrapper(AgentWrapper):
         reply = await self._ask_deepagent(init_query)
         await self._apply_markers(reply)
 
-        # fallback: if schedule still empty, load from file
-        if not self._jobs:
-            try:
-                saved = json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
-                valid = [j for j in saved if isinstance(j, dict) and j.get("name") and j.get("cron")]
-                if valid:
-                    await self.send_schedule(valid)
-            except Exception:
-                pass
+        # merge file-based jobs into whatever the agent reported
+        try:
+            saved = json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
+            file_jobs = [j for j in saved if isinstance(j, dict) and j.get("name") and j.get("cron")]
+            existing_names = {j.get("name") for j in self._jobs}
+            extras = [j for j in file_jobs if j.get("name") not in existing_names]
+            if extras:
+                await self.send_schedule(list(self._jobs) + extras)
+        except Exception:
+            pass
         if not self._jobs:
             await self.send_schedule(_DEFAULT_SCHEDULE)
 
