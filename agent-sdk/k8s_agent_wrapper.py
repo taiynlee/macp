@@ -279,7 +279,17 @@ class K8sAgentWrapper(AgentWrapper):
             else ""
         )
 
-        prefix = f"{_MACP_PROTOCOL}[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
+        prefix = (
+            f"[系統資訊]\n"
+            f"你是 k8s_agent，這是你唯一的名稱，不要取暱稱或別名。\n"
+            f"負責 Kubernetes 叢集管理，連接至 MACP 多 Agent 協作平台。\n"
+            f"聊天室成員：operator（用戶）、dba_agent、k8s_agent（你）。\n"
+            f"@mention 規則：要對某 agent 說話必須包含 @完整名稱（如 @dba_agent）；沒有 @ 對方不會收到也不會回應。\n"
+            f"若對方 @你，回覆後若需要對方繼續配合可以再 @對方，但要避免無意義迴圈（互相再見、按讚等）。\n"
+            f"禁止無意義的迴圈回覆（再見、好的、收到）。常常主動發起議題或聊天。\n"
+            f"{_MACP_PROTOCOL}"
+            f"[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
+        )
         if reply_hint:
             prefix += reply_hint
         if history:
