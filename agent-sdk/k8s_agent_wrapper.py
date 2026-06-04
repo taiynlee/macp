@@ -14,6 +14,8 @@ import argparse
 import asyncio
 import json
 import logging
+import re
+from pathlib import Path
 
 import httpx
 
@@ -24,8 +26,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [k8s_agent] %(messag
 DEFAULT_LANGGRAPH = "http://localhost:2024"
 DEFAULT_ASSISTANT = ""
 
+_SCHEDULE_FILE       = Path(__file__).parent / "k8s_schedule.json"
+_DEFAULT_CAPABILITIES = ["kubectl", "pod-health", "logs", "deploy", "namespace"]
+_DEFAULT_SCHEDULE     = [
+    {"name": "pod_health_check", "cron": "*/5 * * * *", "desc": "Check pod health"},
+]
+
 _APPROVE_WORDS = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
 _REJECT_WORDS  = {"reject", "no", "n", "拒絕", "取消", "cancel"}
+_SCHEDULE_RE   = re.compile(r'MACP_SCHEDULE:(\[.*?\])\s*$', re.DOTALL)
 
 
 def _extract_text(messages: list) -> str:
@@ -53,13 +62,15 @@ def _parse_decision(text: str) -> str | None:
 
 class K8sAgentWrapper(AgentWrapper):
     name = "k8s_agent"
-    capabilities = []  # populated dynamically from LangGraph on connect
+    capabilities = []
 
     def __init__(self, server_url: str, langgraph_url: str, assistant_id: str) -> None:
         super().__init__(server_url=server_url)
         self._lg_url       = langgraph_url
         self._assistant_id = assistant_id
         self._thread_id: str | None = None
+
+    # ── LangGraph helpers ─────────────────────────────────────────────────────
 
     async def _ask(self, question: str, timeout: int = 60) -> str:
         try:
@@ -134,13 +145,95 @@ class K8sAgentWrapper(AgentWrapper):
             messages = data.get("messages", []) if isinstance(data, dict) else []
             return _extract_text(messages) or "(k8s_agent returned no text)"
 
+    # ── schedule helpers ──────────────────────────────────────────────────────
+
+    def _load_schedule(self) -> list[dict]:
+        try:
+            jobs = json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
+            valid = [j for j in jobs if isinstance(j, dict) and j.get("name") and j.get("cron")]
+            if valid:
+                return valid
+        except Exception:
+            pass
+        return _DEFAULT_SCHEDULE
+
+    async def _apply_schedule_marker(self, text: str) -> tuple[str, bool]:
+        m = _SCHEDULE_RE.search(text)
+        if not m:
+            return text, False
+        try:
+            jobs = json.loads(m.group(1))
+            valid = [j for j in jobs if isinstance(j, dict) and j.get("name") and j.get("cron")]
+            if valid:
+                await self.send_schedule(valid)
+                _SCHEDULE_FILE.write_text(
+                    json.dumps(valid, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                logging.info(f"[k8s_agent] schedule auto-updated: {valid}")
+                return text[:m.start()].rstrip(), True
+        except Exception as e:
+            logging.warning(f"[k8s_agent] schedule marker parse failed: {e}")
+        return text, False
+
+    # ── task handler ──────────────────────────────────────────────────────────
+
     async def handle_task(self, msg: dict) -> str:
         question = msg.get("content", "").strip()
         if not question:
             return "empty task"
+
         if question.lower() == "!reset":
             self._thread_id = None
             return "k8s_agent 記憶已清除。"
+
+        if question.startswith("!schedule"):
+            payload = question[len("!schedule"):].strip()
+
+            async def _apply(jobs: list) -> str:
+                await self.send_schedule(jobs)
+                _SCHEDULE_FILE.write_text(
+                    json.dumps(jobs, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                return json.dumps(jobs, ensure_ascii=False, indent=2)
+
+            if not payload:
+                current = json.dumps(self._jobs, ensure_ascii=False, indent=2) if self._jobs else "（尚無排程）"
+                return (
+                    f"目前排程：\n{current}\n\n"
+                    "指令：\n"
+                    "  !schedule add {\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}\n"
+                    "  !schedule remove <job名稱>\n"
+                    "  !schedule [...]  （整批替換）"
+                )
+
+            if payload.startswith("add "):
+                try:
+                    new_job = json.loads(payload[4:].strip())
+                    if not isinstance(new_job, dict) or not new_job.get("name") or not new_job.get("cron"):
+                        return "格式錯誤，需要 {\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}"
+                    jobs = [j for j in self._jobs if j.get("name") != new_job["name"]]
+                    jobs.append(new_job)
+                    result = await _apply(jobs)
+                    return f"已新增 {new_job['name']}，目前共 {len(jobs)} 個排程：\n{result}"
+                except Exception as e:
+                    return f"新增失敗：{e}"
+
+            if payload.startswith("remove "):
+                name = payload[7:].strip()
+                jobs = [j for j in self._jobs if j.get("name") != name]
+                if len(jobs) == len(self._jobs):
+                    return f"找不到排程：{name}"
+                result = await _apply(jobs)
+                return f"已移除 {name}，目前共 {len(jobs)} 個排程：\n{result}"
+
+            try:
+                jobs = json.loads(payload)
+                if not isinstance(jobs, list):
+                    return "格式錯誤，請傳入 JSON array。"
+                result = await _apply(jobs)
+                return f"排程已整批更新，共 {len(jobs)} 個任務：\n{result}"
+            except Exception as e:
+                return f"排程解析失敗：{e}"
 
         context = msg.get("context", [])
         history = "\n".join(
@@ -154,27 +247,17 @@ class K8sAgentWrapper(AgentWrapper):
             if original_sender and original_sender not in ("", "orchestrator", "server")
             else ""
         )
-        rules = (
-            "行為規則：\n"
-            "1. 可以閒聊、自我介紹、聊興趣或工作，回應要自然簡短。\n"
-            "2. 【重要】想對某個 agent 說話或發問，訊息中必須包含 @完整名稱（如 @dba_agent、@gmail_agent）。\n"
-            "   沒有 @ 對方就不會收到你的訊息。例如：「@dba_agent 你那邊資料庫效能如何？」\n"
-            "3. 若某個 agent @你，你可以回覆，但回覆後不要再 @任何人，避免無限對話。\n"
-            "4. 不要同時 @多個 agent 製造群聊迴圈。\n"
-            "5. 禁止無意義的回覆，例如：好的、收到、👍、再見。\n"
-        )
-        prefix = (
-            f"[系統資訊]\n你是 k8s_agent，這是你唯一的名稱，不要取暱稱或別名。\n"
-            f"負責 Kubernetes 叢集管理，連接至 MACP 多 Agent 平台。\n"
-            f"聊天室成員：operator（用戶）、dba_agent、k8s_agent（你）、gmail_agent。\n"
-            f"@mention 對照：要找 dba agent 請寫 @dba_agent；要找 gmail agent 請寫 @gmail_agent。\n"
-            f"{reply_hint}{rules}\n"
-        )
+
+        prefix = f"[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
+        if reply_hint:
+            prefix += reply_hint
         if history:
             prefix += f"[聊天室記錄]\n{history}\n\n"
 
         logging.info(f"forwarding to LangGraph: {question[:80]}")
-        return await self._ask(prefix + f"[當前問題] {question}")
+        reply = await self._ask(prefix + f"[當前問題] {question}")
+        reply, _ = await self._apply_schedule_marker(reply)
+        return reply
 
     async def on_message(self, msg: dict) -> None:
         logging.info(f"recv {msg.get('type')}: {str(msg.get('content',''))[:80]}")
@@ -189,67 +272,13 @@ class K8sAgentWrapper(AgentWrapper):
                 return False
         return True
 
-    async def _ask_discovery(self, prompt: str) -> str:
-        """Send a discovery prompt to LangGraph and return the raw reply."""
-        try:
-            async with httpx.AsyncClient(base_url=self._lg_url, timeout=30) as client:
-                r = await client.post("/threads", json={})
-                r.raise_for_status()
-                thread_id = r.json()["thread_id"]
-                r = await client.post(
-                    f"/threads/{thread_id}/runs/wait",
-                    json={"assistant_id": self._assistant_id,
-                          "input": {"messages": [{"role": "user", "content": prompt}]}},
-                )
-                if r.status_code != 200:
-                    return ""
-                for msg in reversed(r.json().get("messages", [])):
-                    if msg.get("type") in ("human", "tool"):
-                        continue
-                    content = str(msg.get("content", "")).strip()
-                    if "</think>" in content:
-                        content = content.split("</think>", 1)[-1].strip()
-                    if content:
-                        return content
-        except Exception as e:
-            logging.warning(f"[k8s_agent] discovery failed: {e}")
-        return ""
-
-    async def _discover_capabilities(self) -> list[str]:
-        raw = await self._ask_discovery(
-            "List all your available tools/functions as a JSON array of strings. "
-            "Reply ONLY with the JSON array. Example: [\"tool1\",\"tool2\"]. If none: []")
-        try:
-            import json as _json
-            tools = _json.loads(raw)
-            if isinstance(tools, list):
-                return [str(t) for t in tools if t]
-        except Exception:
-            pass
-        return []
-
-    async def _discover_schedule(self) -> list[dict]:
-        raw = await self._ask_discovery(
-            "What scheduled maintenance/monitoring jobs should you run? "
-            "Reply ONLY with a JSON array: [{\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}]. If none: []")
-        try:
-            import json as _json
-            jobs = _json.loads(raw)
-            if isinstance(jobs, list):
-                return jobs
-        except Exception:
-            pass
-        return []
-
     async def on_connect(self) -> None:
-        caps = await self._discover_capabilities()
-        if caps:
-            await self.update_capabilities(caps)
-            logging.info(f"[k8s_agent] capabilities: {caps}")
-        jobs = await self._discover_schedule()
-        if jobs:
-            await self.send_schedule(jobs)
-            logging.info(f"[k8s_agent] schedule: {jobs}")
+        await self.update_capabilities(_DEFAULT_CAPABILITIES)
+
+        jobs = self._load_schedule()
+        await self.send_schedule(jobs)
+        logging.info(f"[k8s_agent] schedule: {jobs}")
+
         await self.send_alert("k8s_agent online — K8s ready", priority="normal")
 
 

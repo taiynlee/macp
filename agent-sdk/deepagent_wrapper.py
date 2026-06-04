@@ -14,10 +14,13 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 
 import httpx
 
 from wrapper import AgentWrapper
+
+_SCHEDULE_FILE = Path(__file__).parent / "dba_schedule.json"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [dba_agent] %(message)s")
 
@@ -26,6 +29,12 @@ ASSISTANT_ID  = os.environ.get("DEEPAGENT_ASSISTANT_ID", "")
 
 _APPROVE_WORDS = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
 _REJECT_WORDS  = {"reject", "no", "n", "拒絕", "取消", "cancel"}
+
+_DEFAULT_SCHEDULE = [
+    {"name": "connection_check", "cron": "*/5 * * * *", "desc": "Ping LangGraph /ok"},
+]
+
+_DEFAULT_CAPABILITIES = ["postgres", "gh-tool", "git-tool", "remember", "skill-creator"]
 
 
 def _default_server() -> str:
@@ -161,6 +170,62 @@ class DeepAgentWrapper(AgentWrapper):
             logging.info("[dba_agent] thread reset")
             return "記憶已清除，開始新對話。"
 
+        if question.startswith("!schedule"):
+            payload = question[len("!schedule"):].strip()
+
+            def _save(jobs: list) -> str:
+                _SCHEDULE_FILE.write_text(
+                    json.dumps(jobs, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+
+            async def _apply(jobs: list) -> str:
+                await self.send_schedule(jobs)
+                _save(jobs)
+                return json.dumps(jobs, ensure_ascii=False, indent=2)
+
+            # !schedule  → 顯示目前排程
+            if not payload:
+                current = json.dumps(self._jobs, ensure_ascii=False, indent=2) if self._jobs else "（尚無排程）"
+                return (
+                    f"目前排程：\n{current}\n\n"
+                    "指令：\n"
+                    "  !schedule add {\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}\n"
+                    "  !schedule remove <job名稱>\n"
+                    "  !schedule [...]  （整批替換）"
+                )
+
+            # !schedule add {...}  → 新增單一 job
+            if payload.startswith("add "):
+                try:
+                    new_job = json.loads(payload[4:].strip())
+                    if not isinstance(new_job, dict) or not new_job.get("name") or not new_job.get("cron"):
+                        return "格式錯誤，需要 {\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}"
+                    jobs = [j for j in self._jobs if j.get("name") != new_job["name"]]
+                    jobs.append(new_job)
+                    result = await _apply(jobs)
+                    return f"已新增 {new_job['name']}，目前共 {len(jobs)} 個排程：\n{result}"
+                except Exception as e:
+                    return f"新增失敗：{e}"
+
+            # !schedule remove <name>  → 移除單一 job
+            if payload.startswith("remove "):
+                name = payload[7:].strip()
+                jobs = [j for j in self._jobs if j.get("name") != name]
+                if len(jobs) == len(self._jobs):
+                    return f"找不到排程：{name}"
+                result = await _apply(jobs)
+                return f"已移除 {name}，目前共 {len(jobs)} 個排程：\n{result}"
+
+            # !schedule [...]  → 整批替換
+            try:
+                jobs = json.loads(payload)
+                if not isinstance(jobs, list):
+                    return "格式錯誤，請傳入 JSON array。"
+                result = await _apply(jobs)
+                return f"排程已整批更新，共 {len(jobs)} 個任務：\n{result}"
+            except Exception as e:
+                return f"排程解析失敗：{e}"
+
         context = msg.get("context", [])
         history = "\n".join(
             f"[{m['sender']}]: {m['content']}"
@@ -183,19 +248,41 @@ class DeepAgentWrapper(AgentWrapper):
             "4. 不要同時 @多個 agent 製造群聊迴圈。\n"
             "5. 禁止無意義的回覆，例如：好的、收到、👍、再見。\n"
         )
-        prefix = (
-            f"[系統資訊]\n你是 dba_agent，這是你唯一的名稱，不要取暱稱或別名。\n"
-            f"負責資料庫相關任務，連接至 MACP 多 Agent 平台。\n"
-            f"聊天室成員：operator（用戶）、dba_agent（你）、k8s_agent、gmail_agent。\n"
-            f"@mention 對照：要找 k8s agent 請寫 @k8s_agent；要找 gmail agent 請寫 @gmail_agent。\n"
-            f"{reply_hint}{rules}\n"
-        )
+        schedule_desc = "、".join(
+            f"{j['name']}（{j.get('desc', j['cron'])}）" for j in self._jobs
+        ) if self._jobs else "（尚未設定）"
+        prefix = f"[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
+        if reply_hint:
+            prefix += reply_hint
         if history:
             prefix += f"[聊天室記錄]\n{history}\n\n"
         full_question = f"{prefix}[當前問題] {question}"
 
         logging.info(f"forwarding to deepagent: {question[:80]}")
-        return await self._ask_deepagent(full_question)
+        reply = await self._ask_deepagent(full_question)
+        reply, updated = await self._apply_schedule_marker(reply)
+        return reply
+
+    async def _apply_schedule_marker(self, text: str) -> tuple[str, bool]:
+        """Extract MACP_SCHEDULE:[...] from agent reply, apply + persist if found."""
+        import re as _re
+        m = _re.search(r'MACP_SCHEDULE:(\[.*?\])\s*$', text, _re.DOTALL)
+        if not m:
+            return text, False
+        try:
+            jobs = json.loads(m.group(1))
+            valid = [j for j in jobs if isinstance(j, dict) and j.get("name") and j.get("cron")]
+            if valid:
+                await self.send_schedule(valid)
+                _SCHEDULE_FILE.write_text(
+                    json.dumps(valid, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                logging.info(f"[dba_agent] schedule auto-updated via marker: {valid}")
+                clean = text[:m.start()].rstrip()
+                return clean, True
+        except Exception as e:
+            logging.warning(f"[dba_agent] schedule marker parse failed: {e}")
+        return text, False
 
     # ── override to intercept approval messages before normal dispatch ────────
 
@@ -233,48 +320,23 @@ class DeepAgentWrapper(AgentWrapper):
                 return False
         return True  # other jobs: assume OK until actually implemented
 
-    async def _discover_capabilities(self) -> list[str]:
-        """Ask the LangGraph agent what tools it has, return as capability list."""
-        try:
-            async with httpx.AsyncClient(base_url=DEEPAGENT_URL, timeout=30) as client:
-                r = await client.post("/threads", json={})
-                r.raise_for_status()
-                thread_id = r.json()["thread_id"]
-                r = await client.post(
-                    f"/threads/{thread_id}/runs/wait",
-                    json={
-                        "assistant_id": ASSISTANT_ID,
-                        "input": {"messages": [{"role": "user", "content":
-                            "List all your available tools/functions as a JSON array of strings. "
-                            "Reply ONLY with the JSON array, nothing else. Example: [\"tool1\",\"tool2\"]. "
-                            "If you have no tools reply: []"}]},
-                    },
-                )
-                if r.status_code != 200:
-                    return []
-                messages = r.json().get("messages", [])
-                for msg in reversed(messages):
-                    if msg.get("type") in ("human", "tool"):
-                        continue
-                    content = str(msg.get("content", "")).strip()
-                    if "</think>" in content:
-                        content = content.split("</think>", 1)[-1].strip()
-                    try:
-                        import json as _json
-                        tools = _json.loads(content)
-                        if isinstance(tools, list):
-                            return [str(t) for t in tools if t]
-                    except Exception:
-                        pass
-        except Exception as e:
-            logging.warning(f"[dba_agent] capability discovery failed: {e}")
-        return []
+    async def _init_from_agent(self) -> tuple[list[str], list[dict]]:
+        """
+        Ask LangGraph to recall its current capabilities + schedule from memory.
+        Parse tool results (raw memory content) first — more reliable than AI text.
+        """
+        import re as _re
 
-    async def _discover_schedule(self) -> list[dict]:
-        """Ask the LangGraph agent what scheduled jobs it needs."""
-        import json as _json, re as _re
+        query = (
+            "【MACP 系統初始化】你剛重新連線到 MACP 聊天室。\n"
+            "請使用你的 memory/remember 工具，查詢你目前的 capabilities 和 schedule 設定。\n"
+            "查詢後只回傳一個 JSON 物件，格式：\n"
+            '{"capabilities":["skill1","skill2"],'
+            '"schedule":[{"name":"job","cron":"* * * * *","desc":"描述"}]}\n'
+            "不要加任何說明文字，只輸出 JSON。"
+        )
         try:
-            async with httpx.AsyncClient(base_url=DEEPAGENT_URL, timeout=30) as client:
+            async with httpx.AsyncClient(base_url=DEEPAGENT_URL, timeout=45) as client:
                 r = await client.post("/threads", json={})
                 r.raise_for_status()
                 thread_id = r.json()["thread_id"]
@@ -282,46 +344,79 @@ class DeepAgentWrapper(AgentWrapper):
                     f"/threads/{thread_id}/runs/wait",
                     json={
                         "assistant_id": ASSISTANT_ID,
-                        "input": {"messages": [{"role": "user", "content":
-                            f"請查看你的 AGENTS.md 中 '## Scheduled Jobs' 區段，"
-                            f"將其中定義的排程任務以 JSON array 回傳，格式：[{{\"name\":\"...\",\"cron\":\"...\",\"desc\":\"...\"}}]。"
-                            f"只回傳 JSON array，不要加任何說明文字。"
-                            f"若 AGENTS.md 沒有定義 Scheduled Jobs，回傳：[]"}]},
+                        "input": {"messages": [{"role": "user", "content": query}]},
                     },
                 )
                 if r.status_code != 200:
-                    return []
+                    return [], []
+
                 messages = r.json().get("messages", [])
-                for msg in reversed(messages):
-                    if msg.get("type") in ("human", "tool"):
-                        continue
-                    content = str(msg.get("content", "")).strip()
-                    if "</think>" in content:
-                        content = content.split("</think>", 1)[-1].strip()
-                    logging.info(f"[dba_agent] schedule raw response: {content[:200]}")
-                    # extract JSON array even if wrapped in markdown code block
-                    match = _re.search(r'\[.*?\]', content, _re.DOTALL)
-                    if match:
+                logging.info(f"[dba_agent] !init got {len(messages)} messages")
+
+                def _try_parse(text: str) -> tuple[list, list] | None:
+                    text = text.strip()
+                    if "</think>" in text:
+                        text = text.split("</think>", 1)[-1].strip()
+                    # try full text, then extract first {...}
+                    for candidate in (text, None):
+                        if candidate is None:
+                            m = _re.search(r'\{.*\}', text, _re.DOTALL)
+                            candidate = m.group() if m else None
+                        if not candidate:
+                            continue
                         try:
-                            jobs = _json.loads(match.group())
-                            if isinstance(jobs, list):
-                                logging.info(f"[dba_agent] schedule discovered: {jobs}")
-                                return jobs
+                            data = json.loads(candidate)
+                            if isinstance(data, dict):
+                                caps = data.get("capabilities", [])
+                                sched = data.get("schedule", [])
+                                if isinstance(caps, list) and isinstance(sched, list):
+                                    return caps, sched
                         except Exception:
                             pass
+                    return None
+
+                # priority 1: tool results (raw memory/file content)
+                for msg in messages:
+                    if msg.get("type") == "tool":
+                        raw = msg.get("content", "")
+                        if isinstance(raw, list):
+                            raw = " ".join(str(c.get("text", c)) for c in raw)
+                        logging.info(f"[dba_agent] !init tool result: {str(raw)[:200]}")
+                        result = _try_parse(str(raw))
+                        if result:
+                            return result
+
+                # priority 2: AI message
+                for msg in reversed(messages):
+                    if msg.get("type") in ("human", "tool"):
+                        continue
+                    raw = str(msg.get("content", ""))
+                    logging.info(f"[dba_agent] !init ai msg: {raw[:200]}")
+                    result = _try_parse(raw)
+                    if result:
+                        return result
+
         except Exception as e:
-            logging.warning(f"[dba_agent] schedule discovery failed: {e}")
-        return []
+            logging.warning(f"[dba_agent] !init failed: {e}")
+        return [], []
 
     async def on_connect(self) -> None:
-        caps = await self._discover_capabilities()
-        if caps:
-            await self.update_capabilities(caps)
-            logging.info(f"[dba_agent] capabilities: {caps}")
-        jobs = await self._discover_schedule()
-        if jobs:
-            await self.send_schedule(jobs)
-            logging.info(f"[dba_agent] schedule: {jobs}")
+        caps, jobs = await self._init_from_agent()
+        logging.info(f"[dba_agent] init → caps={caps}, jobs={jobs}")
+
+        await self.update_capabilities(caps or _DEFAULT_CAPABILITIES)
+
+        valid_jobs = [j for j in jobs if isinstance(j, dict) and j.get("name") and j.get("cron")]
+        if not valid_jobs:
+            try:
+                saved = json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
+                valid_jobs = [j for j in saved if isinstance(j, dict) and j.get("name") and j.get("cron")]
+                if valid_jobs:
+                    logging.info(f"[dba_agent] schedule loaded from file: {valid_jobs}")
+            except Exception:
+                pass
+        await self.send_schedule(valid_jobs or _DEFAULT_SCHEDULE)
+
         await self.send_alert("dba_agent online — DB ready", priority="normal")
 
 

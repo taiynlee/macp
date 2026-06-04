@@ -1,0 +1,7 @@
+[
+  {
+    "name": "pod_health_check",
+    "cron": "*/5 * * * *",
+    "desc": "Check pod health"
+  }
+]

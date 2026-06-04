@@ -85,7 +85,7 @@ export function useWebSocket(): UseWebSocketReturn {
         const msg: MACPMessage = JSON.parse(ev.data)
         const action = msg.action
 
-        if (msg.type === 'system' && (action === 'agent_connected' || action === 'agent_disconnected' || action === 'schedule_updated')) {
+        if (msg.type === 'system' && (action === 'agent_connected' || action === 'agent_disconnected' || action === 'schedule_updated' || action === 'capabilities_updated')) {
           refreshAgents()
         }
 
@@ -109,6 +109,13 @@ export function useWebSocket(): UseWebSocketReturn {
   }, [])
 
   useEffect(() => () => { wsRef.current?.close() }, [])
+
+  // poll every 10s to catch any missed schedule_updated events during long discovery
+  useEffect(() => {
+    if (!connected) return
+    const id = setInterval(refreshAgents, 10_000)
+    return () => clearInterval(id)
+  }, [connected, refreshAgents])
 
   return { messages, agents, connected, connect, disconnect, send }
 }

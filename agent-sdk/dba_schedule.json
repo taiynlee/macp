@@ -1,0 +1,17 @@
+[
+  {
+    "name": "connection_check",
+    "cron": "*/5 * * * *",
+    "desc": "Ping LangGraph /ok"
+  },
+  {
+    "name": "fubon_monthly",
+    "cron": "0 9 3 * *",
+    "desc": "富邦每月三號"
+  },
+  {
+    "name": "db_connection_check",
+    "cron": "0 */3 * * *",
+    "desc": "DB 連線測試"
+  }
+]
