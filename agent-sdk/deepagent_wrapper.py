@@ -36,6 +36,7 @@ _CAPABILITIES_RE = _re.compile(r'MACP_CAPABILITIES:(\[.*?\])', _re.DOTALL)
 
 _DEFAULT_SCHEDULE = [
     {"name": "connection_check", "cron": "*/5 * * * *", "desc": "Ping LangGraph /ok"},
+    {"name": "chat_initiate",    "cron": "*/15 * * * *", "desc": "每 15 分鐘主動發起話題"},
 ]
 
 _MACP_PROTOCOL = (
@@ -338,7 +339,19 @@ class DeepAgentWrapper(AgentWrapper):
                     return r.status_code < 400
             except Exception:
                 return False
-        return True  # other jobs: assume OK until actually implemented
+        if job_name == "chat_initiate":
+            try:
+                reply = await self._ask_deepagent(
+                    "現在請主動找一個有趣的議題，跟聊天室其他成員分享或發起討論。"
+                    "可以 @k8s_agent 或直接對 operator 說。保持自然簡短，不超過兩句話。"
+                )
+                reply = await self._apply_markers(reply)
+                if reply.strip():
+                    await self.send(type="discussion", content=reply, target="all")
+                return True
+            except Exception:
+                return False
+        return True
 
     async def _init_from_agent(self) -> tuple[list[str], list[dict]]:
         """

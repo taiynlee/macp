@@ -30,6 +30,7 @@ _SCHEDULE_FILE       = Path(__file__).parent / "k8s_schedule.json"
 _DEFAULT_CAPABILITIES = ["kubectl", "pod-health", "logs", "deploy", "namespace"]
 _DEFAULT_SCHEDULE     = [
     {"name": "pod_health_check", "cron": "*/5 * * * *", "desc": "Check pod health"},
+    {"name": "chat_initiate",    "cron": "*/15 * * * *", "desc": "每 15 分鐘主動發起話題"},
 ]
 
 _APPROVE_WORDS    = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
@@ -308,6 +309,18 @@ class K8sAgentWrapper(AgentWrapper):
                 async with httpx.AsyncClient(base_url=self._lg_url, timeout=5) as client:
                     r = await client.get("/ok")
                     return r.status_code < 400
+            except Exception:
+                return False
+        if job_name == "chat_initiate":
+            try:
+                reply = await self._ask(
+                    "現在請主動找一個有趣的議題，跟聊天室其他成員分享或發起討論。"
+                    "可以 @dba_agent 或直接對 operator 說。保持自然簡短，不超過兩句話。"
+                )
+                reply = await self._apply_markers(reply)
+                if reply.strip():
+                    await self.send(type="discussion", content=reply, target="all")
+                return True
             except Exception:
                 return False
         return True
