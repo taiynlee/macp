@@ -154,13 +154,12 @@ class K8sAgentWrapper(AgentWrapper):
                     logging.warning(f"__error__: {str(data['__error__'])[:300]}")
                     break
 
-            if isinstance(data, dict):
-                logging.info(f"[k8s] response keys: {list(data.keys())}")
-                logging.info(f"[k8s] response data: {str(data)[:500]}")
+            if isinstance(data, dict) and data.get("__error__"):
+                err = data["__error__"]
+                msg = f"{err.get('error','')}: {err.get('message','')}"
+                logging.warning(f"[k8s] LangGraph error: {msg}")
+                return f"k8s LangGraph 錯誤 — {msg}"
             messages = data.get("messages", []) if isinstance(data, dict) else []
-            logging.info(f"[k8s] msg count={len(messages)}, types={[m.get('type') for m in messages]}")
-            for m in messages[-2:]:
-                logging.info(f"[k8s] msg type={m.get('type')} content={str(m.get('content',''))[:200]}")
             return _extract_text(messages) or "(k8s_agent returned no text)"
 
     # ── schedule helpers ──────────────────────────────────────────────────────
