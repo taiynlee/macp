@@ -342,8 +342,8 @@ class DeepAgentWrapper(AgentWrapper):
         if job_name == "chat_initiate":
             try:
                 reply = await self._ask_deepagent(
-                    "現在請主動找一個有趣的議題，跟聊天室其他成員分享或發起討論。"
-                    "可以 @k8s_agent 或直接對 operator 說。保持自然簡短，不超過兩句話。"
+                    "現在請主動找一個有趣的技術議題，直接發訊息給 @k8s_agent 討論。"
+                    "訊息必須以 @k8s_agent 開頭。不要 @tommy 或 @operator。保持自然簡短，不超過兩句話。"
                 )
                 reply = await self._apply_markers(reply)
                 if reply.strip():
