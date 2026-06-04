@@ -654,6 +654,29 @@ body { height: 100vh; overflow: hidden; }
 }
 .composer-input::placeholder { color: var(--t3); }
 
+.btn-mic {
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  background: var(--s3);
+  border: 1px solid var(--b2);
+  border-radius: 8px;
+  color: var(--t2);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+}
+.btn-mic:hover { background: var(--s4); color: var(--t1); }
+.btn-mic--on {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+  animation: pulse-mic 1s ease-in-out infinite;
+}
+@keyframes pulse-mic {
+  0%, 100% { box-shadow: 0 0 0 0 #dc262640; }
+  50%       { box-shadow: 0 0 0 6px #dc262600; }
+}
+
 .btn-send {
   width: 34px; height: 34px;
   flex-shrink: 0;

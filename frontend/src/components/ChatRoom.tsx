@@ -47,10 +47,14 @@ function parseTarget(text: string): { target: string; content: string } {
   return { target: 'all', content: text.trim() }
 }
 
+const SpeechRecognition = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
+
 export function ChatRoom({ messages, agents, connected, myName, onSend, onDisconnect, theme, onToggleTheme }: Props) {
   const left  = useResizable('panel-left',  230, 160, 400)
   const right = useResizable('panel-right', 260, 180, 480, true)
   const [text, setText] = useState('')
+  const [listening, setListening] = useState(false)
+  const recognitionRef = useRef<any>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const historyRef = useRef<string[]>([])
@@ -113,6 +117,41 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
       if (inputRef.current) inputRef.current.style.height = 'auto'
     })
     inputRef.current?.focus()
+  }
+
+  function toggleVoice() {
+    if (!SpeechRecognition) {
+      alert('此瀏覽器不支援語音輸入，請使用 Chrome 或 Edge。')
+      return
+    }
+    if (listening) {
+      recognitionRef.current?.stop()
+      return
+    }
+    const rec = new SpeechRecognition()
+    rec.lang = 'zh-TW'
+    rec.interimResults = true
+    rec.continuous = false
+    let interim = ''
+    rec.onresult = (e: any) => {
+      interim = Array.from(e.results)
+        .map((r: any) => r[0].transcript)
+        .join('')
+      setText(prev => {
+        const base = prev.replace(/​.*$/, '')
+        return base + '​' + interim
+      })
+      requestAnimationFrame(autoResize)
+    }
+    rec.onend = () => {
+      setListening(false)
+      setText(prev => prev.replace('​' + interim, interim).replace('​', ''))
+      inputRef.current?.focus()
+    }
+    rec.onerror = () => { setListening(false) }
+    rec.start()
+    recognitionRef.current = rec
+    setListening(true)
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -185,6 +224,17 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
               autoComplete="off"
               autoFocus
             />
+            {SpeechRecognition && (
+              <button
+                className={`btn-mic ${listening ? 'btn-mic--on' : ''}`}
+                onClick={toggleVoice}
+                title={listening ? '停止錄音' : '語音輸入'}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 17.93A8 8 0 0 1 4 11H2a10 10 0 0 0 9 9.93V23h2v-2.07A10 10 0 0 0 22 11h-2a8 8 0 0 1-7 7.93z"/>
+                </svg>
+              </button>
+            )}
             <button className="btn-send" onClick={handleSend}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
