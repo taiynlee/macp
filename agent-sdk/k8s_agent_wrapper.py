@@ -154,6 +154,9 @@ class K8sAgentWrapper(AgentWrapper):
                     logging.warning(f"__error__: {str(data['__error__'])[:300]}")
                     break
 
+            if isinstance(data, dict):
+                logging.info(f"[k8s] response keys: {list(data.keys())}")
+                logging.info(f"[k8s] response data: {str(data)[:500]}")
             messages = data.get("messages", []) if isinstance(data, dict) else []
             logging.info(f"[k8s] msg count={len(messages)}, types={[m.get('type') for m in messages]}")
             for m in messages[-2:]:
