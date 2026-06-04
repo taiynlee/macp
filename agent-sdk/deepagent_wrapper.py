@@ -45,13 +45,23 @@ def _extract_text(messages: list) -> str:
     for msg in reversed(messages):
         if msg.get("type") in ("human", "tool"):
             continue
-        content = str(msg.get("content", "")).strip()
+        raw = msg.get("content", "")
+        if isinstance(raw, list):
+            parts = [b.get("text", "") for b in raw if isinstance(b, dict) and b.get("type") == "text"]
+            content = " ".join(parts).strip()
+        else:
+            content = str(raw).strip()
         if not content:
             continue
         if "</think>" in content:
-            content = content.split("</think>", 1)[-1].strip()
-        if content:
-            return content
+            after = content.split("</think>", 1)[-1].strip()
+            if after:
+                return after
+            inside = content.split("<think>", 1)[-1].split("</think>")[0].strip()
+            if inside:
+                return inside
+            continue
+        return content
     return ""
 
 

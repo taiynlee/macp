@@ -41,13 +41,25 @@ def _extract_text(messages: list) -> str:
     for msg in reversed(messages):
         if msg.get("type") in ("human", "tool"):
             continue
-        content = str(msg.get("content", "")).strip()
+        raw = msg.get("content", "")
+        # content might be a list of blocks (tool_use + text)
+        if isinstance(raw, list):
+            parts = [b.get("text", "") for b in raw if isinstance(b, dict) and b.get("type") == "text"]
+            content = " ".join(parts).strip()
+        else:
+            content = str(raw).strip()
         if not content:
             continue
         if "</think>" in content:
-            content = content.split("</think>", 1)[-1].strip()
-        if content:
-            return content
+            after = content.split("</think>", 1)[-1].strip()
+            if after:
+                return after
+            # fallback: return the think content itself
+            inside = content.split("<think>", 1)[-1].split("</think>")[0].strip()
+            if inside:
+                return inside
+            continue
+        return content
     return ""
 
 
@@ -143,6 +155,9 @@ class K8sAgentWrapper(AgentWrapper):
                     break
 
             messages = data.get("messages", []) if isinstance(data, dict) else []
+            logging.info(f"[k8s] msg count={len(messages)}, types={[m.get('type') for m in messages]}")
+            for m in messages[-2:]:
+                logging.info(f"[k8s] msg type={m.get('type')} content={str(m.get('content',''))[:200]}")
             return _extract_text(messages) or "(k8s_agent returned no text)"
 
     # ── schedule helpers ──────────────────────────────────────────────────────
