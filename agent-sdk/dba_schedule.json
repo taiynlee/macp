@@ -1,18 +1,18 @@
 [
   {
-    "name": "每3小時測試連線",
+    "name": "DB連線測試",
     "cron": "0 */3 * * *",
-    "desc": "每三小時測試DB連線"
+    "desc": "每3小時測試資料庫連線"
   },
   {
-    "name": "connection_check",
+    "name": "Ping LangGraph",
     "cron": "0 * * * *",
-    "desc": "Ping LangGraph /ok 確認存活"
+    "desc": "每小時 Ping LangGraph /ok"
   },
   {
     "name": "富邦對帳單解析",
-    "cron": "0 9 3 * *",
-    "desc": "每月3號上午9點執行富邦對帳單解析job"
+    "cron": "0 0 3 * *",
+    "desc": "每月3號執行富邦對帳單解析 job"
   },
   {
     "name": "chat_initiate",
