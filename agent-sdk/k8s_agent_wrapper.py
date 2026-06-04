@@ -32,9 +32,17 @@ _DEFAULT_SCHEDULE     = [
     {"name": "pod_health_check", "cron": "*/5 * * * *", "desc": "Check pod health"},
 ]
 
-_APPROVE_WORDS = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
-_REJECT_WORDS  = {"reject", "no", "n", "拒絕", "取消", "cancel"}
-_SCHEDULE_RE   = re.compile(r'MACP_SCHEDULE:(\[.*?\])\s*$', re.DOTALL)
+_APPROVE_WORDS    = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
+_REJECT_WORDS     = {"reject", "no", "n", "拒絕", "取消", "cancel"}
+_SCHEDULE_RE      = re.compile(r'MACP_SCHEDULE:(\[.*?\])', re.DOTALL)
+_CAPABILITIES_RE  = re.compile(r'MACP_CAPABILITIES:(\[.*?\])', re.DOTALL)
+
+_MACP_PROTOCOL = (
+    "【MACP 協議】\n"
+    "- 若技能（skills）有新增或異動，回覆加上：MACP_CAPABILITIES:[\"skill1\",\"skill2\"]\n"
+    "- 若排程（schedule）有新增、修改或刪除，回覆加上：MACP_SCHEDULE:[{\"name\":\"job\",\"cron\":\"* * * * *\",\"desc\":\"描述\"}]\n"
+    "（以上兩個標記為完整 array，包含所有現有項目 + 本次變動）\n"
+)
 
 
 def _extract_text(messages: list) -> str:
@@ -174,23 +182,29 @@ class K8sAgentWrapper(AgentWrapper):
             pass
         return _DEFAULT_SCHEDULE
 
-    async def _apply_schedule_marker(self, text: str) -> tuple[str, bool]:
-        m = _SCHEDULE_RE.search(text)
-        if not m:
-            return text, False
-        try:
-            jobs = json.loads(m.group(1))
-            valid = [j for j in jobs if isinstance(j, dict) and j.get("name") and j.get("cron")]
-            if valid:
-                await self.send_schedule(valid)
-                _SCHEDULE_FILE.write_text(
-                    json.dumps(valid, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-                logging.info(f"[k8s_agent] schedule auto-updated: {valid}")
-                return text[:m.start()].rstrip(), True
-        except Exception as e:
-            logging.warning(f"[k8s_agent] schedule marker parse failed: {e}")
-        return text, False
+    async def _apply_markers(self, text: str) -> str:
+        """Extract MACP_CAPABILITIES and MACP_SCHEDULE markers, apply, strip from text."""
+        for m in sorted([*_CAPABILITIES_RE.finditer(text), *_SCHEDULE_RE.finditer(text)],
+                        key=lambda x: x.start(), reverse=True):
+            try:
+                data = json.loads(m.group(1))
+            except Exception:
+                continue
+            if m.re is _CAPABILITIES_RE and isinstance(data, list):
+                caps = [str(c) for c in data if c]
+                if caps:
+                    await self.update_capabilities(caps)
+                    logging.info(f"[k8s_agent] capabilities updated: {caps}")
+            elif m.re is _SCHEDULE_RE and isinstance(data, list):
+                valid = [j for j in data if isinstance(j, dict) and j.get("name") and j.get("cron")]
+                if valid:
+                    await self.send_schedule(valid)
+                    _SCHEDULE_FILE.write_text(
+                        json.dumps(valid, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+                    logging.info(f"[k8s_agent] schedule updated: {valid}")
+            text = text[:m.start()].rstrip() + text[m.end():]
+        return text.strip()
 
     # ── task handler ──────────────────────────────────────────────────────────
 
@@ -265,7 +279,7 @@ class K8sAgentWrapper(AgentWrapper):
             else ""
         )
 
-        prefix = f"[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
+        prefix = f"{_MACP_PROTOCOL}[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
         if reply_hint:
             prefix += reply_hint
         if history:
@@ -273,8 +287,7 @@ class K8sAgentWrapper(AgentWrapper):
 
         logging.info(f"forwarding to LangGraph: {question[:80]}")
         reply = await self._ask(prefix + f"[當前問題] {question}")
-        reply, _ = await self._apply_schedule_marker(reply)
-        return reply
+        return await self._apply_markers(reply)
 
     async def on_message(self, msg: dict) -> None:
         logging.info(f"recv {msg.get('type')}: {str(msg.get('content',''))[:80]}")
@@ -290,11 +303,21 @@ class K8sAgentWrapper(AgentWrapper):
         return True
 
     async def on_connect(self) -> None:
-        await self.update_capabilities(_DEFAULT_CAPABILITIES)
+        init_query = (
+            f"{_MACP_PROTOCOL}"
+            "【初始化】你剛連線到 MACP 聊天室。\n"
+            "請回報你目前的技能和排程，在回覆最後加上兩個標記：\n"
+            "MACP_CAPABILITIES:[\"skill1\",\"skill2\"]\n"
+            "MACP_SCHEDULE:[{\"name\":\"job\",\"cron\":\"* * * * *\",\"desc\":\"描述\"}]"
+        )
+        reply = await self._ask(init_query)
+        await self._apply_markers(reply)
 
-        jobs = self._load_schedule()
-        await self.send_schedule(jobs)
-        logging.info(f"[k8s_agent] schedule: {jobs}")
+        # fallback: if schedule still empty, load from file
+        if not self._jobs:
+            jobs = self._load_schedule()
+            if jobs:
+                await self.send_schedule(jobs)
 
         await self.send_alert("k8s_agent online — K8s ready", priority="normal")
 

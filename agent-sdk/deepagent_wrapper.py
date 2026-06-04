@@ -27,12 +27,23 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [dba_agent] %(messag
 DEEPAGENT_URL = os.environ.get("DEEPAGENT_URL", "http://localhost:2024")
 ASSISTANT_ID  = os.environ.get("DEEPAGENT_ASSISTANT_ID", "")
 
-_APPROVE_WORDS = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
-_REJECT_WORDS  = {"reject", "no", "n", "拒絕", "取消", "cancel"}
+import re as _re
+
+_APPROVE_WORDS   = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
+_REJECT_WORDS    = {"reject", "no", "n", "拒絕", "取消", "cancel"}
+_SCHEDULE_RE     = _re.compile(r'MACP_SCHEDULE:(\[.*?\])', _re.DOTALL)
+_CAPABILITIES_RE = _re.compile(r'MACP_CAPABILITIES:(\[.*?\])', _re.DOTALL)
 
 _DEFAULT_SCHEDULE = [
     {"name": "connection_check", "cron": "*/5 * * * *", "desc": "Ping LangGraph /ok"},
 ]
+
+_MACP_PROTOCOL = (
+    "【MACP 協議】\n"
+    "- 若技能（skills）有新增或異動，回覆加上：MACP_CAPABILITIES:[\"skill1\",\"skill2\"]\n"
+    "- 若排程（schedule）有新增、修改或刪除，回覆加上：MACP_SCHEDULE:[{\"name\":\"job\",\"cron\":\"* * * * *\",\"desc\":\"描述\"}]\n"
+    "（以上兩個標記為完整 array，包含所有現有項目 + 本次變動）\n"
+)
 
 _DEFAULT_CAPABILITIES = ["postgres", "gh-tool", "git-tool", "remember", "skill-creator"]
 
@@ -258,10 +269,7 @@ class DeepAgentWrapper(AgentWrapper):
             "4. 不要同時 @多個 agent 製造群聊迴圈。\n"
             "5. 禁止無意義的回覆，例如：好的、收到、👍、再見。\n"
         )
-        schedule_desc = "、".join(
-            f"{j['name']}（{j.get('desc', j['cron'])}）" for j in self._jobs
-        ) if self._jobs else "（尚未設定）"
-        prefix = f"[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
+        prefix = f"{_MACP_PROTOCOL}[目前排程] {json.dumps(self._jobs, ensure_ascii=False)}\n"
         if reply_hint:
             prefix += reply_hint
         if history:
@@ -270,29 +278,31 @@ class DeepAgentWrapper(AgentWrapper):
 
         logging.info(f"forwarding to deepagent: {question[:80]}")
         reply = await self._ask_deepagent(full_question)
-        reply, updated = await self._apply_schedule_marker(reply)
-        return reply
+        return await self._apply_markers(reply)
 
-    async def _apply_schedule_marker(self, text: str) -> tuple[str, bool]:
-        """Extract MACP_SCHEDULE:[...] from agent reply, apply + persist if found."""
-        import re as _re
-        m = _re.search(r'MACP_SCHEDULE:(\[.*?\])\s*$', text, _re.DOTALL)
-        if not m:
-            return text, False
-        try:
-            jobs = json.loads(m.group(1))
-            valid = [j for j in jobs if isinstance(j, dict) and j.get("name") and j.get("cron")]
-            if valid:
-                await self.send_schedule(valid)
-                _SCHEDULE_FILE.write_text(
-                    json.dumps(valid, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-                logging.info(f"[dba_agent] schedule auto-updated via marker: {valid}")
-                clean = text[:m.start()].rstrip()
-                return clean, True
-        except Exception as e:
-            logging.warning(f"[dba_agent] schedule marker parse failed: {e}")
-        return text, False
+    async def _apply_markers(self, text: str) -> str:
+        """Extract MACP_CAPABILITIES and MACP_SCHEDULE markers, apply, strip from text."""
+        for m in sorted([*_CAPABILITIES_RE.finditer(text), *_SCHEDULE_RE.finditer(text)],
+                        key=lambda x: x.start(), reverse=True):
+            try:
+                data = json.loads(m.group(1))
+            except Exception:
+                continue
+            if m.re is _CAPABILITIES_RE and isinstance(data, list):
+                caps = [str(c) for c in data if c]
+                if caps:
+                    await self.update_capabilities(caps)
+                    logging.info(f"[dba_agent] capabilities updated: {caps}")
+            elif m.re is _SCHEDULE_RE and isinstance(data, list):
+                valid = [j for j in data if isinstance(j, dict) and j.get("name") and j.get("cron")]
+                if valid:
+                    await self.send_schedule(valid)
+                    _SCHEDULE_FILE.write_text(
+                        json.dumps(valid, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+                    logging.info(f"[dba_agent] schedule updated: {valid}")
+            text = text[:m.start()].rstrip() + text[m.end():]
+        return text.strip()
 
     # ── override to intercept approval messages before normal dispatch ────────
 
@@ -411,21 +421,27 @@ class DeepAgentWrapper(AgentWrapper):
         return [], []
 
     async def on_connect(self) -> None:
-        caps, jobs = await self._init_from_agent()
-        logging.info(f"[dba_agent] init → caps={caps}, jobs={jobs}")
+        init_query = (
+            f"{_MACP_PROTOCOL}"
+            "【初始化】你剛連線到 MACP 聊天室。\n"
+            "請回報你目前的技能和排程，在回覆最後加上兩個標記：\n"
+            "MACP_CAPABILITIES:[\"skill1\",\"skill2\"]\n"
+            "MACP_SCHEDULE:[{\"name\":\"job\",\"cron\":\"* * * * *\",\"desc\":\"描述\"}]"
+        )
+        reply = await self._ask_deepagent(init_query)
+        await self._apply_markers(reply)
 
-        await self.update_capabilities(caps or _DEFAULT_CAPABILITIES)
-
-        valid_jobs = [j for j in jobs if isinstance(j, dict) and j.get("name") and j.get("cron")]
-        if not valid_jobs:
+        # fallback: if schedule still empty, load from file
+        if not self._jobs:
             try:
                 saved = json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8"))
-                valid_jobs = [j for j in saved if isinstance(j, dict) and j.get("name") and j.get("cron")]
-                if valid_jobs:
-                    logging.info(f"[dba_agent] schedule loaded from file: {valid_jobs}")
+                valid = [j for j in saved if isinstance(j, dict) and j.get("name") and j.get("cron")]
+                if valid:
+                    await self.send_schedule(valid)
             except Exception:
                 pass
-        await self.send_schedule(valid_jobs or _DEFAULT_SCHEDULE)
+        if not self._jobs:
+            await self.send_schedule(_DEFAULT_SCHEDULE)
 
         await self.send_alert("dba_agent online — DB ready", priority="normal")
 
