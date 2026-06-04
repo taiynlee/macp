@@ -126,29 +126,34 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
     }
     if (listening) {
       recognitionRef.current?.stop()
+      recognitionRef.current = null
+      setListening(false)
+      inputRef.current?.focus()
       return
     }
     const rec = new SpeechRecognition()
     rec.lang = 'zh-TW'
-    rec.interimResults = true
-    rec.continuous = false
-    let interim = ''
+    rec.interimResults = false  // only final results → no flickering
+    rec.continuous = true       // keep recording until user stops
     rec.onresult = (e: any) => {
-      interim = Array.from(e.results)
+      const transcript = Array.from(e.results)
+        .filter((r: any) => r.isFinal)
         .map((r: any) => r[0].transcript)
         .join('')
-      setText(prev => {
-        const base = prev.replace(/​.*$/, '')
-        return base + '​' + interim
-      })
-      requestAnimationFrame(autoResize)
+      if (transcript) {
+        setText(prev => prev + transcript)
+        requestAnimationFrame(autoResize)
+      }
     }
     rec.onend = () => {
       setListening(false)
-      setText(prev => prev.replace('​' + interim, interim).replace('​', ''))
-      inputRef.current?.focus()
+      recognitionRef.current = null
     }
-    rec.onerror = () => { setListening(false) }
+    rec.onerror = (e: any) => {
+      if (e.error !== 'aborted') console.warn('speech error:', e.error)
+      setListening(false)
+      recognitionRef.current = null
+    }
     rec.start()
     recognitionRef.current = rec
     setListening(true)
