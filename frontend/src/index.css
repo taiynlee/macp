@@ -532,12 +532,17 @@ body { height: 100vh; overflow: hidden; }
 .bubble {
   padding: 9px 12px;
   border-radius: 12px;
-  font-size: var(--f-base);
-  line-height: 1.55;
+  font-size: var(--f-sm);
+  line-height: 1.6;
   word-break: break-word;
   overflow-wrap: break-word;
   min-width: 0;
   overflow: hidden;
+}
+/* all children inherit agent color + font-size — no rogue overrides */
+.bubble * {
+  color: inherit;
+  font-size: inherit;
 }
 
 .b-other {
@@ -559,19 +564,16 @@ body { height: 100vh; overflow: hidden; }
   border: 1px solid #142318;
   border-top-left-radius: 3px;
   color: #a7e8c0;
-  font-family: var(--f-mono);
 }
 
-/* pre blocks — wrap within bubble */
+/* pre blocks — layout only, color/size inherited from bubble */
 .msg-pre {
   font-family: var(--f-mono);
-  font-size: var(--f-xs);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
   overflow-wrap: break-word;
   margin-top: 4px;
-  color: inherit;
 }
 
 /* ── Composer ─────────────────────────────────────────────────────────── */
