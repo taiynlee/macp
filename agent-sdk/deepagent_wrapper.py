@@ -35,8 +35,9 @@ _SCHEDULE_RE     = _re.compile(r'MACP_SCHEDULE:(\[.*?\])', _re.DOTALL)
 _CAPABILITIES_RE = _re.compile(r'MACP_CAPABILITIES:(\[.*?\])', _re.DOTALL)
 
 _DEFAULT_SCHEDULE = [
-    {"name": "connection_check", "cron": "*/5 * * * *", "desc": "Ping LangGraph /ok"},
+    {"name": "connection_check", "cron": "*/5 * * * *",  "desc": "Ping LangGraph /ok"},
     {"name": "chat_initiate",    "cron": "*/15 * * * *", "desc": "每 15 分鐘主動發起話題"},
+    {"name": "session_reset",    "cron": "0 */6 * * *",  "desc": "每 6 小時 summarize + 重置對話 thread"},
 ]
 
 _MACP_PROTOCOL = (
@@ -351,6 +352,49 @@ class DeepAgentWrapper(AgentWrapper):
                 return True
             except Exception:
                 return False
+        if job_name == "session_reset":
+            # Step 1: ask agent to save state to memory before losing the thread
+            if self._thread_id is not None:
+                try:
+                    await self._ask_deepagent(
+                        "【MACP session_reset】系統即將重置對話 thread 以控制 token 用量。\n"
+                        "請立即使用 memory/remember 工具，儲存以下資訊後只回覆 SAVED：\n"
+                        f"capabilities: {json.dumps(self.capabilities, ensure_ascii=False)}\n"
+                        f"schedule: {json.dumps(self._jobs, ensure_ascii=False)}\n"
+                        "本 session 重要操作或發現（50 字以內摘要，無則略過）",
+                        timeout=60,
+                    )
+                except Exception as e:
+                    logging.warning(f"[dba_agent] session_reset save failed: {e}")
+
+            # Step 2: reset thread
+            old_thread = self._thread_id
+            self._thread_id = None
+            logging.info(f"[dba_agent] session_reset: thread {old_thread} cleared")
+
+            # Step 3: reinit with new thread (reads from memory)
+            try:
+                reply = await self._ask_deepagent(
+                    f"{_MACP_PROTOCOL}"
+                    "【初始化】session 已定期重置（token 管理）。\n"
+                    "請使用 memory 工具查詢你的 capabilities 和 schedule，在回覆最後加上兩個標記：\n"
+                    "MACP_CAPABILITIES:[\"skill1\",\"skill2\"]\n"
+                    "MACP_SCHEDULE:[{\"name\":\"job\",\"cron\":\"* * * * *\",\"desc\":\"描述\"}]"
+                )
+                await self._apply_markers(reply)
+                all_jobs = list(self._jobs)
+                seen = {j.get("name") for j in all_jobs}
+                for source in (self._load_file_schedule(), _DEFAULT_SCHEDULE):
+                    for j in source:
+                        if j.get("name") not in seen:
+                            all_jobs.append(j)
+                            seen.add(j.get("name"))
+                await self.send_schedule(all_jobs)
+                await self.send_alert("dba_agent session 已重置（定期 token 清理）", priority="normal")
+            except Exception as e:
+                logging.warning(f"[dba_agent] session_reset reinit failed: {e}")
+                return False
+            return True
         return True
 
     def _load_file_schedule(self) -> list[dict]:

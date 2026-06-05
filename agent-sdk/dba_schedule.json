@@ -1,17 +1,17 @@
 [
   {
-    "name": "DB連線測試",
+    "name": "db_connection_check",
     "cron": "0 */3 * * *",
-    "desc": "每3小時測試一次資料庫連線"
+    "desc": "每3小時DB連線測試"
   },
   {
-    "name": "Ping LangGraph",
-    "cron": "0 */3 * * *",
-    "desc": "每3小時 ping LangGraph /ok"
+    "name": "ping_langgraph",
+    "cron": "0 * * * *",
+    "desc": "每小時Ping LangGraph /ok"
   },
   {
-    "name": "富邦對帳單解析",
+    "name": "fubon_monthly",
     "cron": "0 0 3 * *",
-    "desc": "每月3號執行富邦對帳單解析"
+    "desc": "每月3號富邦對帳單解析"
   }
 ]

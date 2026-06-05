@@ -29,8 +29,9 @@ DEFAULT_ASSISTANT = ""
 _SCHEDULE_FILE       = Path(__file__).parent / "k8s_schedule.json"
 _DEFAULT_CAPABILITIES = ["kubectl", "pod-health", "logs", "deploy", "namespace"]
 _DEFAULT_SCHEDULE     = [
-    {"name": "pod_health_check", "cron": "*/5 * * * *", "desc": "Check pod health"},
+    {"name": "pod_health_check", "cron": "*/5 * * * *",  "desc": "Check pod health"},
     {"name": "chat_initiate",    "cron": "*/15 * * * *", "desc": "每 15 分鐘主動發起話題"},
+    {"name": "session_reset",    "cron": "0 */6 * * *",  "desc": "每 6 小時 summarize + 重置對話 thread"},
 ]
 
 _APPROVE_WORDS    = {"approve", "yes", "y", "確認", "同意", "ok", "好"}
@@ -323,6 +324,48 @@ class K8sAgentWrapper(AgentWrapper):
                 return True
             except Exception:
                 return False
+        if job_name == "session_reset":
+            # Step 1: ask agent to save state to memory before losing the thread
+            if self._thread_id is not None:
+                try:
+                    await self._ask(
+                        "【MACP session_reset】系統即將重置對話 thread 以控制 token 用量。\n"
+                        "請立即使用 memory/remember 工具，儲存以下資訊後只回覆 SAVED：\n"
+                        f"capabilities: {json.dumps(self.capabilities, ensure_ascii=False)}\n"
+                        f"schedule: {json.dumps(self._jobs, ensure_ascii=False)}\n"
+                        "本 session 重要操作或發現（50 字以內摘要，無則略過）",
+                    )
+                except Exception as e:
+                    logging.warning(f"[k8s_agent] session_reset save failed: {e}")
+
+            # Step 2: reset thread
+            old_thread = self._thread_id
+            self._thread_id = None
+            logging.info(f"[k8s_agent] session_reset: thread {old_thread} cleared")
+
+            # Step 3: reinit with new thread (reads from memory)
+            try:
+                reply = await self._ask(
+                    f"{_MACP_PROTOCOL}"
+                    "【初始化】session 已定期重置（token 管理）。\n"
+                    "請使用 memory 工具查詢你的 capabilities 和 schedule，在回覆最後加上兩個標記：\n"
+                    "MACP_CAPABILITIES:[\"skill1\",\"skill2\"]\n"
+                    "MACP_SCHEDULE:[{\"name\":\"job\",\"cron\":\"* * * * *\",\"desc\":\"描述\"}]"
+                )
+                await self._apply_markers(reply)
+                all_jobs = list(self._jobs)
+                seen = {j.get("name") for j in all_jobs}
+                for source in (self._load_schedule(), _DEFAULT_SCHEDULE):
+                    for j in source:
+                        if j.get("name") not in seen:
+                            all_jobs.append(j)
+                            seen.add(j.get("name"))
+                await self.send_schedule(all_jobs)
+                await self.send_alert("k8s_agent session 已重置（定期 token 清理）", priority="normal")
+            except Exception as e:
+                logging.warning(f"[k8s_agent] session_reset reinit failed: {e}")
+                return False
+            return True
         return True
 
     async def on_connect(self) -> None:
