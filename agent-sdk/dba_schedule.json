@@ -1,17 +1,42 @@
 [
   {
-    "name": "db_connection_check",
+    "name": "DB連線測試",
     "cron": "0 */3 * * *",
-    "desc": "每3小時DB連線測試"
+    "desc": "每3小時測試資料庫連線"
   },
   {
-    "name": "ping_langgraph",
+    "name": "Ping LangGraph",
+    "cron": "*/5 * * * *",
+    "desc": "每5分鐘確認服務正常"
+  },
+  {
+    "name": "富邦對帳單解析",
+    "cron": "0 9 3 * *",
+    "desc": "每月3號早上9點執行"
+  },
+  {
+    "name": "主動發起話題",
     "cron": "0 * * * *",
-    "desc": "每小時Ping LangGraph /ok"
+    "desc": "每小時主動溝通"
   },
   {
-    "name": "fubon_monthly",
-    "cron": "0 0 3 * *",
-    "desc": "每月3號富邦對帳單解析"
+    "name": "summarize重置",
+    "cron": "0 */6 * * *",
+    "desc": "每6小時摘要並重置對話 thread"
+  },
+  {
+    "name": "connection_check",
+    "cron": "*/5 * * * *",
+    "desc": "Ping LangGraph /ok"
+  },
+  {
+    "name": "chat_initiate",
+    "cron": "0 * * * *",
+    "desc": "每小時主動發起話題"
+  },
+  {
+    "name": "session_reset",
+    "cron": "0 */6 * * *",
+    "desc": "每 6 小時 summarize + 重置對話 thread"
   }
 ]
