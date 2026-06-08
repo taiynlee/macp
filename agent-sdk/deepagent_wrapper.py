@@ -298,6 +298,8 @@ class DeepAgentWrapper(AgentWrapper):
             elif m.re is _SCHEDULE_RE and isinstance(data, list):
                 valid = [j for j in data if isinstance(j, dict) and j.get("name") and j.get("cron")]
                 if valid:
+                    _default_map = {j["name"]: j for j in _DEFAULT_SCHEDULE}
+                    valid = [_default_map.get(j["name"], j) for j in valid]
                     await self.send_schedule(valid)
                     _SCHEDULE_FILE.write_text(
                         json.dumps(valid, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -495,8 +497,9 @@ class DeepAgentWrapper(AgentWrapper):
         reply = await self._ask_deepagent(init_query)
         await self._apply_markers(reply)
 
-        # build final schedule: agent + file + defaults, all merged
-        all_jobs = list(self._jobs)
+        # build final schedule: _DEFAULT_SCHEDULE crons always override agent-reported
+        _default_map = {j["name"]: j for j in _DEFAULT_SCHEDULE}
+        all_jobs = [_default_map.get(j.get("name"), j) for j in self._jobs]
         seen = {j.get("name") for j in all_jobs}
         for source in (self._load_file_schedule(), _DEFAULT_SCHEDULE):
             for j in source:
