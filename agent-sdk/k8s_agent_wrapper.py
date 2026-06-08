@@ -30,7 +30,7 @@ _SCHEDULE_FILE       = Path(__file__).parent / "k8s_schedule.json"
 _DEFAULT_CAPABILITIES = ["kubectl", "pod-health", "logs", "deploy", "namespace"]
 _DEFAULT_SCHEDULE     = [
     {"name": "pod_health_check", "cron": "*/5 * * * *",  "desc": "Check pod health"},
-    {"name": "chat_initiate",    "cron": "*/15 * * * *", "desc": "每 15 分鐘主動發起話題"},
+    {"name": "chat_initiate",    "cron": "0 * * * *",    "desc": "每小時主動發起話題"},
     {"name": "session_reset",    "cron": "0 */6 * * *",  "desc": "每 6 小時 summarize + 重置對話 thread"},
 ]
 

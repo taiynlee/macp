@@ -36,7 +36,7 @@ _CAPABILITIES_RE = _re.compile(r'MACP_CAPABILITIES:(\[.*?\])', _re.DOTALL)
 
 _DEFAULT_SCHEDULE = [
     {"name": "connection_check", "cron": "*/5 * * * *",  "desc": "Ping LangGraph /ok"},
-    {"name": "chat_initiate",    "cron": "*/15 * * * *", "desc": "每 15 分鐘主動發起話題"},
+    {"name": "chat_initiate",    "cron": "0 * * * *",    "desc": "每小時主動發起話題"},
     {"name": "session_reset",    "cron": "0 */6 * * *",  "desc": "每 6 小時 summarize + 重置對話 thread"},
 ]
 
