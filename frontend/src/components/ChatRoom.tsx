@@ -130,8 +130,11 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
     const { target, content } = parseTarget(raw)
     if (!content) return
     onSend({ type: 'discussion', target, content })
-    if (target !== 'all') {
-      setThinkingAgents(prev => new Set([...prev, target]))
+    const targets = target === 'all'
+      ? agents.map(a => a.name)
+      : [target]
+    if (targets.length > 0) {
+      setThinkingAgents(prev => new Set([...prev, ...targets]))
     }
     historyRef.current = [raw, ...historyRef.current.slice(0, 99)]
     historyIdx.current = -1
