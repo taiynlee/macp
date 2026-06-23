@@ -54,6 +54,27 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
   const right = useResizable('panel-right', 260, 180, 480, true)
   const [text, setText] = useState('')
   const [listening, setListening] = useState(false)
+  const [thinkingAgents, setThinkingAgents] = useState<Set<string>>(new Set())
+
+  // clear thinking when a reply arrives
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    if (!last) return
+    if ((last.type === 'report' || last.type === 'discussion') && last.sender !== myName) {
+      setThinkingAgents(prev => {
+        const next = new Set(prev)
+        next.delete(last.sender as string)
+        return next
+      })
+    }
+  }, [messages, myName])
+
+  // 90s timeout failsafe
+  useEffect(() => {
+    if (thinkingAgents.size === 0) return
+    const id = setTimeout(() => setThinkingAgents(new Set()), 90_000)
+    return () => clearTimeout(id)
+  }, [thinkingAgents.size])
   const recognitionRef = useRef<any>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -109,6 +130,9 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
     const { target, content } = parseTarget(raw)
     if (!content) return
     onSend({ type: 'discussion', target, content })
+    if (target !== 'all') {
+      setThinkingAgents(prev => new Set([...prev, target]))
+    }
     historyRef.current = [raw, ...historyRef.current.slice(0, 99)]
     historyIdx.current = -1
     setText('')
@@ -202,7 +226,7 @@ export function ChatRoom({ messages, agents, connected, myName, onSend, onDiscon
           <button className="btn-power" onClick={onDisconnect} title="disconnect">⏻</button>
         </div>
 
-        <MessageFeed messages={messages} myName={myName} agents={agents} onReply={handleReply} theme={theme} />
+        <MessageFeed messages={messages} myName={myName} agents={agents} onReply={handleReply} theme={theme} thinkingAgents={thinkingAgents} />
 
         <div className="composer">
           {dropdownOpen && mentionOptions.length > 0 && (

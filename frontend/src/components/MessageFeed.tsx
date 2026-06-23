@@ -15,6 +15,7 @@ interface Props {
   agents: AgentInfo[]
   onReply?: (sender: string) => void
   theme?: 'dark' | 'light'
+  thinkingAgents?: Set<string>
 }
 
 function formatTime(iso: string) {
@@ -49,7 +50,7 @@ function renderContent(content: string, forceCode = false) {
   )
 }
 
-export function MessageFeed({ messages, myName, onReply, theme }: Props) {
+export function MessageFeed({ messages, myName, onReply, theme, thinkingAgents }: Props) {
   const isLight = theme === 'light'
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -138,6 +139,22 @@ export function MessageFeed({ messages, myName, onReply, theme }: Props) {
           </div>
         )
       })}
+
+      {thinkingAgents && [...thinkingAgents].map(agentName => (
+        <div key={`thinking-${agentName}`} className="msg-row other">
+          <Avatar name={agentName} size={28} />
+          <div className="msg-col">
+            <div className="msg-meta">
+              <span className="msg-name" style={{ color: agentColors(agentName).accent }}>{agentName}</span>
+            </div>
+            <div className="bubble b-other typing-bubble">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </div>
+          </div>
+        </div>
+      ))}
 
       <div ref={bottomRef} />
     </div>
